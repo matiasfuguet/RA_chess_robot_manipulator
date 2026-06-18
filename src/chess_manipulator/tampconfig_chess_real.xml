@@ -7,14 +7,13 @@
         <graspit name="" /> <!-- leave it empty if no graspit is to be used -->
     </Problemfiles>
     <States>
-        <!-- You can set a different instance of the problem by modifying the intial object poses-->
-        <!-- The GraspControls will be to be changed accordingly the new intial object poses-->
-        <!-- (be careful: if the objects change their initial room then also the pddl problem file
-        has to be set accordingly) -->
+        <!-- Real robot TCP positions (robot frame, in metres).
+             These are measured directly on the UR3e and used for real execution.
+             For Kautham simulation use tampconfig_chess.xml instead. -->
         <Initial>
-            <Object name="PEON_NEGRO" kthname="PEON_NEGRO"> 0.058 0.053 0.060 0.013345 -0.999580 0.025736 3.147323</Object> <!--
+            <Object name="PEON_NEGRO" kthname="PEON_NEGRO"> -0.05185 -0.32145 -0.35752 0.013345 -0.999580 0.025736 3.147323</Object> <!--
             orientation in axis-angle (vx,vy,vz,theta) like in the kautham problem files-->
-            <Object name="PEON_BLANCO" kthname="PEON_BLANCO"> 0.003 -0.003 0.057 0.012559 -0.999036 0.042071 3.185071</Object>
+            <Object name="PEON_BLANCO" kthname="PEON_BLANCO"> 0.01077 -0.38227 -0.36040 0.012559 -0.999036 0.042071 3.185071</Object>
             <Robot name="ur3_right" controlfile="controls/right_ur3_with_gripper.cntr"> 0.500 0.375
                 0.500 0.375 0.500 0.500 0.813 </Robot>
         </Initial>
