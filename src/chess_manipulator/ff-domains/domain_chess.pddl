@@ -4,27 +4,21 @@
 
 (:predicates
       (at ?rob - robot ?from - location)
-      (connected ?from - location ?to - location)
       (handEmpty)
       (holding ?rob - robot ?obs - obstacle)
       (in ?obs - obstacle ?from - location)
       (clear ?loc - location)
       (valid_zone ?loc - location)
+      (is_home ?loc - location)
 )
 
-(:action move_to_home
-   :parameters (?rob - robot ?from - location)
-   :precondition  (at ?rob ?from)
-   :effect  (and  (at ?rob home)
-                  (not (at ?rob ?from))
-            )
-)
-
-(:action move_from_home
-   :parameters (?rob - robot ?to - location)
-   :precondition  (at ?rob home)
+(:action move
+   :parameters (?rob - robot ?from - location ?to - location)
+   :precondition  (and  (at ?rob ?from)
+                        (or (is_home ?from) (is_home ?to)) 
+                  )
    :effect  (and  (at ?rob ?to)
-                  (not (at ?rob home))
+                  (not (at ?rob ?from))
             )
 )
 

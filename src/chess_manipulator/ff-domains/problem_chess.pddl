@@ -15,7 +15,7 @@
     (handEmpty)
     (clear graveyard)
     (clear home)
-
+    (is_home home) 
     (valid_zone e4)
     (valid_zone d5)
     (valid_zone graveyard)
