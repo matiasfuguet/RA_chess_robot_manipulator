@@ -13,17 +13,18 @@
     (in peon_blanco e4)
     (at ur3a home)
     (handEmpty)
-    (connected home d5)
-    (connected home e4)
-    (connected home graveyard)
-    (connected d5 home)
-    (connected e4 home)
-    (connected graveyard home)
+    (clear graveyard)
+    (clear home)
+
+    (valid_zone e4)
+    (valid_zone d5)
+    (valid_zone graveyard)
 )
 
 (:goal
     (and  (in peon_negro graveyard)
           (in peon_blanco d5)
+          (at ur3a home)
     )
 )
 

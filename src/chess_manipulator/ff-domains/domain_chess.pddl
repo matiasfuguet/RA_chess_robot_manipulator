@@ -8,15 +8,23 @@
       (handEmpty)
       (holding ?rob - robot ?obs - obstacle)
       (in ?obs - obstacle ?from - location)
+      (clear ?loc - location)
+      (valid_zone ?loc - location)
 )
 
-(:action move
-   :parameters (?rob - robot ?from - location ?to - location)
-   :precondition  (and  (at ?rob ?from)
-                        (connected ?from ?to)
-                  )
-   :effect  (and  (at ?rob ?to)
+(:action move_to_home
+   :parameters (?rob - robot ?from - location)
+   :precondition  (at ?rob ?from)
+   :effect  (and  (at ?rob home)
                   (not (at ?rob ?from))
+            )
+)
+
+(:action move_from_home
+   :parameters (?rob - robot ?to - location)
+   :precondition  (at ?rob home)
+   :effect  (and  (at ?rob ?to)
+                  (not (at ?rob home))
             )
 )
 
@@ -28,6 +36,8 @@
                   )
    :effect  (and  (holding ?rob ?obs)
                   (not (handEmpty))
+                  (not (in ?obs ?from)) 
+                  (clear ?from)         
             )
 )
 
@@ -35,10 +45,13 @@
    :parameters (?rob - robot ?obs - obstacle ?to - location)
    :precondition  (and  (holding ?rob ?obs)
                         (at ?rob ?to)
+                        (clear ?to)
+                        (valid_zone ?to)
                   )
    :effect  (and  (handEmpty)
                   (in ?obs ?to)
                   (not (holding ?rob ?obs))
+                  (not (clear ?to))
             )
 )
 
