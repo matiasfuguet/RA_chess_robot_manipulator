@@ -16,12 +16,12 @@
 
 	<Obstacle obstacle="/obstacles/chess/pawnB1/pawnB1.urdf" scale="1.0">
 		<KauthamName name="PEON_NEGRO" />
-		<Home TH="-1.570796327" WZ="1.0" WY="0.0" WX="0.0" Z="0.025" Y="0.175" X="0.125" />
+		<Home TH="3.147323" WZ="0.025736" WY="-0.999580" WX="0.013345" Z="-0.35752" Y="-0.32145" X="-0.05185" />
 	</Obstacle>
 
 	<Obstacle obstacle="/obstacles/chess/pawnW1/pawnW1.urdf" scale="1.0">
 		<KauthamName name="PEON_BLANCO" />
-		<Home TH="-1.570796327" WZ="1.0" WY="0.0" WX="0.0" Z="0.025" Y="0.125" X="0.175" />
+		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="-0.36040" Y="-0.38227" X="0.01077" />
 	</Obstacle>
 
 	<Controls robot="controls/right_ur3_with_gripper.cntr" />
@@ -39,12 +39,12 @@
 		</Parameters>
 		<Queries>
 			<Query>
-				<RobotControl name="ur3_right_shoulder_pan_joint" init="0.500" goal="0.545" />
-				<RobotControl name="ur3_right_shoulder_lift_joint" init="0.375" goal="0.380" />
-				<RobotControl name="ur3_right_elbow_joint" init="0.500" goal="0.835" />
-				<RobotControl name="ur3_right_wrist_1_joint" init="0.375" goal="0.327" />
-				<RobotControl name="ur3_right_wrist_2_joint" init="0.500" goal="0.375" />
-				<RobotControl name="ur3_right_wrist_3_joint" init="0.500" goal="0.425" />
+				<RobotControl name="ur3_right_shoulder_pan_joint" init="0.500" goal="0.581986" />
+				<RobotControl name="ur3_right_shoulder_lift_joint" init="0.375" goal="0.378903" />
+				<RobotControl name="ur3_right_elbow_joint" init="0.500" goal="0.810000" />
+				<RobotControl name="ur3_right_wrist_1_joint" init="0.375" goal="0.337875" />
+				<RobotControl name="ur3_right_wrist_2_joint" init="0.500" goal="0.377542" />
+				<RobotControl name="ur3_right_wrist_3_joint" init="0.500" goal="0.954889" />
 				<RobotControl name="ur3_right_gripper_joint" init="0.500" goal="0.813" />
 			</Query>
 		</Queries>
