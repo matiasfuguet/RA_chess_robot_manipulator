@@ -2,29 +2,29 @@
 
 <Problem name="OMPL_RRTConnect_chess_pawn_capture">
 
-	<Robot robot="/usr/share/kautham/demos/models/robots/robot_instances/UR_robotiq_85_gripper/ur3_robotiq_85_gripper.urdf.xacro"
+	<Robot robot="/robots/robot_instances/UR_robotiq_85_gripper/ur3_robotiq_85_gripper.urdf.xacro"
 		scale="1.0">
 		<KauthamName name="ur3_right" />
 		<Home TH="1.570796327" WZ="1.0" WY="0.0" WX="0.0" Z="0.0" Y="0.0" X="0.37" />
 		<ViewLink name="robotiq_85_base_link" />
 	</Robot>
 
-	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/flat_chessboard/flat_chessboard.urdf" scale="1.0">
+	<Obstacle obstacle="/obstacles/chess/flat_chessboard/flat_chessboard.urdf" scale="1.0">
 		<KauthamName name="flat_chessboard" />
 		<Home TH="1.570796327" WZ="1.0" WY="0.0" WX="0.0" Z="0.0" Y="0.0" X="0.0" />
 	</Obstacle>
 
-	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/pawnB1/pawnB1.urdf" scale="1.0">
+	<Obstacle obstacle="/obstacles/chess/pawnB1/pawnB1.urdf" scale="1.0">
 		<KauthamName name="PEON_NEGRO" />
 		<Home TH="3.147323" WZ="0.025736" WY="-0.999580" WX="0.013345" Z="0.060" Y="0.053" X="0.058" />
 	</Obstacle>
 
-	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/pawnW1/pawnW1.urdf" scale="1.0">
+	<Obstacle obstacle="/obstacles/chess/pawnW1/pawnW1.urdf" scale="1.0">
 		<KauthamName name="PEON_BLANCO" />
 		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="0.057" Y="-0.003" X="0.003" />
 	</Obstacle>
 
-	<Controls robot="./controls/right_ur3_with_gripper.cntr" />
+	<Controls robot="controls/right_ur3_with_gripper.cntr" />
 
 	<Planner>
 		<Parameters>

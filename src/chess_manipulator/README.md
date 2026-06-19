@@ -130,3 +130,23 @@ El cliente invoca iterativamente al planificador l√≥gico y al planificador geom√
    src/chess_manipulator/taskfile_tampconfig_chess.xml
    ```
 4. Pulsa **Play** para reproducir la secuencia completa de movimientos del robot.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ros2 launch ktmpb_client ktmpb_full.launch.py \
+  models_folder_path:=/usr/share/kautham/demos/models \
+  scenario_folder_path:=/home/gerard/Escritorio/IA/6t/RA/Practica_final1/RA_chess_robot_manipulator/src/chess_manipulator \
+  tamp_config_filename:=tampconfig_chess_real.xml
