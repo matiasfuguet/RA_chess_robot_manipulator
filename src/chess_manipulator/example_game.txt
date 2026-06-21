@@ -1,0 +1,11 @@
+# Initial board: SQUARE=PIECE_NAME
+# Piece names must be PEON_NEGRO/PEON_BLANCO for the taskfile-generation
+# step - those are the only 2 real objects in the Kautham scene.
+e4=PEON_BLANCO
+e6=PEON_NEGRO
+
+# Moves (UCI, one per line, in order)
+e4e5
+e6e5
+e5d4
+d4c3

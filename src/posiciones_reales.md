@@ -9,6 +9,7 @@ graveyard: 30.45, -59.38, 73.70, -105.48, -87.28, 292.92
 
 posicion peon negro en d5: X:-51.85mm Y:-321.45mm Z:-357.52mm RX:0.042RAD RY:-3.146RAD RZ:0.081RAD
 posicion peon blanco en e4: X:10.77mm Y:-382.27mm Z:-360.40mm RX:0.040RAD RY:-3.182RAD RZ:0.134RAD
+posicion graveyard (una casilla a la izquierda de a5): X:-299.99mm Y:-321.43mm Z:-357.58mm RX:0.043RAD RY:-3.146RAD RZ:0.081RAD
 
 
 Esto nos puso el profe en otro proyecto con este robot: 
