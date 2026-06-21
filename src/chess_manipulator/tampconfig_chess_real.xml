@@ -25,16 +25,16 @@
             <Obj> PEON_NEGRO </Obj>
             <Link> robotiq_85_base_link </Link>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
-            <HomeControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </HomeControls>
-<GraspControls grasp="topgrasp"> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </GraspControls>
+            <HomeControls> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </HomeControls>
+            <GraspControls grasp="topgrasp"> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </GraspControls>
         </Pick>
         <!-- Plan step 5: PLACE del peon negro en graveyard -->
         <Place robot="UR3A" object="PEON_NEGRO" region="GRAVEYARD">
             <Rob> ur3_right </Rob>
             <Obj> PEON_NEGRO </Obj>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
-            <HomeControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </HomeControls>
-<GraspControls grasp="topgrasp"> 0.400 0.390 0.840 0.320 0.375 0.375 0.813 </GraspControls>
+            <HomeControls> 0.542292 0.417528 0.704722 0.353500 0.378778 0.906833 0.813 </HomeControls>
+            <GraspControls grasp="topgrasp"> 0.542292 0.417528 0.704722 0.353500 0.378778 0.906833 0.813 </GraspControls>
         </Place>
         <!-- Plan step 8: PICK del peon blanco en e4 -->
         <Pick robot="UR3A" object="PEON_BLANCO" region="E4">
@@ -42,60 +42,70 @@
             <Obj> PEON_BLANCO </Obj>
             <Link> robotiq_85_base_link </Link>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
-            <HomeControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </HomeControls>
-<GraspControls grasp="topgrasp"> 0.599500 0.395347 0.775639 0.336583 0.380431 0.972694 0.813 </GraspControls>
+            <HomeControls> 0.599500 0.395347 0.775639 0.336583 0.380431 0.972694 0.813 </HomeControls>
+            <GraspControls grasp="topgrasp"> 0.599500 0.395347 0.775639 0.336583 0.380431 0.972694 0.813 </GraspControls>
         </Pick>
         <!-- Plan step 11: PLACE del peon blanco en d5 -->
         <Place robot="UR3A" object="PEON_BLANCO" region="D5">
             <Rob> ur3_right </Rob>
             <Obj> PEON_BLANCO </Obj>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
-            <HomeControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </HomeControls>
-<GraspControls grasp="topgrasp"> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </GraspControls>
+            <HomeControls> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </HomeControls>
+            <GraspControls grasp="topgrasp"> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </GraspControls>
         </Place>
-        <!-- Plan step 1: MOVE de home a d5 (tránsito previo al pick del peon negro) -->
-        <Move robot="UR3A" region_from="HOME" region_to="D5">
+        <Move robot="UR3A" region_from="HOME" region_to="D5_HOVER">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
             <InitControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </InitControls>
+            <GoalControls> 0.581986 0.373403 0.776306 0.360208 0.377542 0.954889 0.813 </GoalControls>
+        </Move>
+        <Move robot="UR3A" region_from="D5_HOVER" region_to="D5">
+            <Rob> ur3_right </Rob>
+            <Cont>controls/right_ur3_with_gripper.cntr</Cont>
+            <InitControls> 0.581986 0.373403 0.776306 0.360208 0.377542 0.954889 0.813 </InitControls>
             <GoalControls> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 3: MOVE de d5 a home (regreso neutro tras pick del peon negro) -->
         <Move robot="UR3A" region_from="D5" region_to="HOME">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
             <InitControls> 0.581986 0.378903 0.810000 0.337875 0.377542 0.954889 0.813 </InitControls>
             <GoalControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 4: MOVE de home a graveyard (tránsito con peon negro para place) -->
-        <Move robot="UR3A" region_from="HOME" region_to="GRAVEYARD">
+        <Move robot="UR3A" region_from="HOME" region_to="GRAVEYARD_HOVER">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
             <InitControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </InitControls>
-            <GoalControls> 0.400 0.385 0.825 0.320 0.375 0.375 0.813 </GoalControls>
+            <GoalControls> 0.542292 0.415042 0.669139 0.373764 0.378778 0.915167 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 6: MOVE de graveyard a home (regreso neutro tras place del peon negro) -->
+        <Move robot="UR3A" region_from="GRAVEYARD_HOVER" region_to="GRAVEYARD">
+            <Rob> ur3_right </Rob>
+            <Cont>controls/right_ur3_with_gripper.cntr</Cont>
+            <InitControls> 0.542292 0.415042 0.669139 0.373764 0.378778 0.915167 0.813 </InitControls>
+            <GoalControls> 0.542292 0.417528 0.704722 0.353500 0.378778 0.906833 0.813 </GoalControls>
+        </Move>
         <Move robot="UR3A" region_from="GRAVEYARD" region_to="HOME">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
-            <InitControls> 0.400 0.385 0.825 0.320 0.375 0.375 0.813 </InitControls>
+            <InitControls> 0.542292 0.417528 0.704722 0.353500 0.378778 0.906833 0.813 </InitControls>
             <GoalControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 7: MOVE de home a e4 (tránsito previo al pick del peon blanco) -->
-        <Move robot="UR3A" region_from="HOME" region_to="E4">
+        <Move robot="UR3A" region_from="HOME" region_to="E4_HOVER">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
             <InitControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </InitControls>
+            <GoalControls> 0.599500 0.389917 0.742333 0.358681 0.380431 0.972694 0.813 </GoalControls>
+        </Move>
+        <Move robot="UR3A" region_from="E4_HOVER" region_to="E4">
+            <Rob> ur3_right </Rob>
+            <Cont>controls/right_ur3_with_gripper.cntr</Cont>
+            <InitControls> 0.599500 0.389917 0.742333 0.358681 0.380431 0.972694 0.813 </InitControls>
             <GoalControls> 0.599500 0.395347 0.775639 0.336583 0.380431 0.972694 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 9: MOVE de e4 a home (regreso neutro tras pick del peon blanco) -->
         <Move robot="UR3A" region_from="E4" region_to="HOME">
             <Rob> ur3_right </Rob>
             <Cont>controls/right_ur3_with_gripper.cntr</Cont>
             <InitControls> 0.599500 0.395347 0.775639 0.336583 0.380431 0.972694 0.813 </InitControls>
             <GoalControls> 0.500 0.375 0.500 0.375 0.500 0.500 0.813 </GoalControls>
         </Move>
-        <!-- Plan step 10: MOVE de home a d5 (tránsito con peon blanco para place final) -->
-        <!-- (reutiliza la misma geometria que HOME->D5, ya definida arriba) -->
     </Actions>
 </Config>

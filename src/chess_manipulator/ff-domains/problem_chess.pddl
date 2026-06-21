@@ -3,7 +3,7 @@
 (:domain chesscapture)
 
 (:objects
-    e4 d5 graveyard home - location
+    e4 d5 graveyard home e4_hover d5_hover graveyard_hover - location
     peon_negro peon_blanco - obstacle
     ur3a - robot
 )
@@ -16,6 +16,15 @@
     (clear graveyard)
     (clear home)
     (is_home home) 
+
+    (is_hover e4_hover)
+    (is_hover d5_hover)
+    (is_hover graveyard_hover)
+    
+    (above e4_hover e4)
+    (above d5_hover d5)
+    (above graveyard_hover graveyard)
+    
     (valid_zone e4)
     (valid_zone d5)
     (valid_zone graveyard)
