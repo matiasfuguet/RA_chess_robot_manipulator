@@ -13,6 +13,3 @@ src/chess_manipulator/taskfile_tampconfig_chess_real.xml
 domainfile.pddl
 problemfile
 sas_plan
-
-# Plan/preview review artifacts (regenerated on every run)
-plans/
