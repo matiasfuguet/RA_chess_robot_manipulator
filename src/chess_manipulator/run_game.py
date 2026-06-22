@@ -161,7 +161,9 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     """Build the tampconfig Move/Pick/Place entries for every location/piece
     touched, parsed through ktmpb_client's own Move_read/Pick_read/Place_read so
     the dicts match what MOVE/PICK/PLACE expect. piece_to_kautham maps a logical
-    piece name (e.g. 'e4_piece') to its Kautham scene object (e.g. 'PEON_BLANCO')."""
+    piece name (e.g. 'e4_piece') to its Kautham scene object (e.g. 'PEON_BLANCO').
+    Returns (actions_list, square_joints, hover_joints) - the latter two feed
+    simplify_taskfile's keep_joints, so hover/home stops survive simplification."""
     import MOVE
     import PICK
     import PLACE
@@ -171,24 +173,36 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     seed = seed if seed is not None else sj.D5_SEED_JOINTS
     actions_list = []
     square_joints = {}
+    hover_joints = {}
 
     for name, loc in locations.items():
-        snippets, square_j = sj.tampconfig_move_actions(loc, seed=seed)
+        snippets, square_j, hover_j = sj.tampconfig_move_actions(loc, seed=seed)
         square_joints[name] = square_j
+        hover_joints[name] = hover_j
         seed = square_j
         for snippet in snippets:
             elem = ET.fromstring(snippet)
             actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
 
+    # One <Move> per pair of locations' hover points, so the domain's direct
+    # "hover -> hover" transfer (skipping HOME while carrying a piece between
+    # a pick and its matching place) has somewhere real to be solved against.
+    names = list(locations.keys())
+    for i, name_a in enumerate(names):
+        for name_b in names[i + 1:]:
+            snippet = sj.tampconfig_hover_transfer(locations[name_a], locations[name_b], hover_joints[name_a], hover_joints[name_b])
+            elem = ET.fromstring(snippet)
+            actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
+
     for (action_type, piece, loc_name), (_, _, loc) in pieces.items():
         snippet = sj.tampconfig_pick_or_place(
-            action_type, piece, piece_to_kautham[piece], loc, square_joints[loc_name]
+            action_type, piece, piece_to_kautham[piece], loc, square_joints[loc_name], hover_joints[loc_name]
         )
         elem = ET.fromstring(snippet)
         reader = PICK.Pick_read if action_type == "Pick" else PLACE.Place_read
         actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": reader(elem)})
 
-    return actions_list
+    return actions_list, square_joints, hover_joints
 
 
 # World-frame poses (Kautham axis-angle) of the scene's two pieces. A game with
@@ -221,15 +235,17 @@ MAX_PLANNING_TIME_SECONDS = "60"
 
 
 def _drop_redundant_home_moves(plan_lines):
-    """PICK/PLACE already retreat to HOME inside their own Kautham execution.
-    The plan still emits a separate symbolic 'move rob region home' after each
-    (the planner needs it for state-tracking), but re-solving that transition
-    with the object still attached routes through the constrained planner and
-    throws. Drop those lines."""
+    """PICK/PLACE retreat to this location's hover internally, as part of their
+    own Kautham execution (see HomeControls in tampconfig_pick_or_place) - so
+    the plan's "move region region_hover" right after each pick/place would
+    just re-solve that exact transition again, which is both wasteful and (with
+    the object still attached) risks the same crash we hit before with
+    redundant re-solves. Drop it; keep the next "hover -> home" leg, since
+    that's a real, separate hop pick/place doesn't already cover."""
     result = []
     for line in plan_lines:
         parts = line.split()
-        if parts[0].upper() == "MOVE" and parts[3].upper() == "HOME" and result:
+        if parts[0].upper() == "MOVE" and parts[3].upper() == f"{parts[2].upper()}_HOVER" and result:
             prev_parts = result[-1].split()
             if prev_parts[0].upper() in ("PICK", "PLACE") and prev_parts[3].upper() == parts[2].upper():
                 continue
@@ -283,7 +299,7 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
         kautham.kAttachObject = _attach_at_last_known_pose
         kautham.kDetachObject = _detach_and_park
-    actions_list = build_actions_list(locations, pieces, piece_to_kautham)
+    actions_list, square_joints, hover_joints = build_actions_list(locations, pieces, piece_to_kautham)
 
     rclpy.init()
     node = Node("chess_game_runner")
@@ -322,22 +338,27 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
     info.taskfile.write("</Task>\n")
     info.taskfile.close()
+    keep_joints = [sj.HOME_JOINTS] + list(square_joints.values()) + list(hover_joints.values())
     try:
-        simplify_taskfile(taskfile_path)
+        simplify_taskfile(taskfile_path, keep_joints=keep_joints)
     except ET.ParseError as exc:
         # A failed action mid-Transfer leaves an unclosed tag. The real error is
         # already logged above; skip simplification rather than pile an XML
         # traceback on top.
         node.get_logger().error(f"Taskfile malformed (an action above probably failed mid-Transfer) - skipping simplification: {exc}")
 
-    # Save the symbolic plan (the lines actually executed) in plans/, for
-    # manual review before running the robot.
+    # Save the full symbolic plan (every planned action, nothing dropped) in
+    # plans/, for manual review before running the robot. _drop_redundant_home_moves
+    # only controls what gets *re-dispatched* to Kautham (the "square -> hover"
+    # leg right after a pick/place is skipped there because pick/place's own
+    # internal retreat already solves that exact hop) - the saved plan should
+    # still show every real action so nothing looks like it teleports.
     plans_dir = os.path.normpath(os.path.join(FILE_DIR, "..", "..", "plans"))
     os.makedirs(plans_dir, exist_ok=True)
     plan_path = os.path.join(plans_dir, os.path.splitext(taskfile_name)[0] + ".plan.txt")
     with open(plan_path, "w") as f:
-        f.write("# Plan simbolico ejecutado (MOVE/PICK/PLACE), en orden.\n")
-        for plan_line in _drop_redundant_home_moves(combined_plan):
+        f.write("# Plan simbolico (MOVE/PICK/PLACE), en orden.\n")
+        for plan_line in combined_plan:
             f.write(plan_line + "\n")
 
     node.get_logger().info(f"Plan saved in {plan_path}")

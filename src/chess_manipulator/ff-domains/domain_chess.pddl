@@ -17,15 +17,22 @@
 (:action move
    :parameters (?rob - robot ?from - location ?to - location)
    :precondition  (and  (at ?rob ?from)
-                        (or 
+                        (or
                             ; 1. FASE DE IDA (Aproximación): De Home al punto elevado (Hover)
                             (and (is_home ?from) (is_hover ?to))
-                            
+
                             ; 2. FASE DE AGARRE (Bajar): Del punto elevado a su casilla exacta
                             (above ?from ?to)
-                            
-                            ; 3. FASE DE VUELTA (Retirada): De la casilla directamente a Home
-                            (and (valid_zone ?from) (is_home ?to))
+
+                            ; 3. FASE DE VUELTA (Subir): De la casilla a su punto elevado (Hover)
+                            (above ?to ?from)
+
+                            ; 4. FASE DE VUELTA (Retirada): Del punto elevado a Home
+                            (and (is_hover ?from) (is_home ?to))
+
+                            ; 5. TRANSFERENCIA DIRECTA: De un punto elevado a otro,
+                            ; sin pasar por Home (p.ej. llevando una pieza de pick a place)
+                            (and (is_hover ?from) (is_hover ?to) (not (= ?from ?to)))
                         )
                   )
    :effect  (and  (at ?rob ?to)

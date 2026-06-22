@@ -250,8 +250,10 @@ def _move_xml(region_from, region_to, init_controls, goal_controls):
 
 
 def tampconfig_move_actions(loc, seed=None):
-    """3 <Move> snippets (HOME<->hover, hover<->square). Returns (snippets,
-    square_joints); square_joints feeds the matching Pick/Place GraspControls."""
+    """4 <Move> snippets (HOME<->hover, hover<->square, both ways). Returns
+    (snippets, square_joints, hover_joints); both feed the matching Pick/Place
+    action - square_joints for GraspControls, hover_joints for HomeControls (see
+    tampconfig_pick_or_place)."""
     hover_j = joints_for(loc.hover_pose, seed=seed)
     square_j = joints_for(loc.pose, seed=hover_j)
     hover_c, square_c = joints_to_controls(hover_j), joints_to_controls(square_j)
@@ -259,22 +261,37 @@ def tampconfig_move_actions(loc, seed=None):
     snippets = [
         _move_xml("HOME", f"{region}_HOVER", HOME_CONTROLS, hover_c),
         _move_xml(f"{region}_HOVER", region, hover_c, square_c),
-        _move_xml(region, "HOME", square_c, HOME_CONTROLS),
+        _move_xml(region, f"{region}_HOVER", square_c, hover_c),
+        _move_xml(f"{region}_HOVER", "HOME", hover_c, HOME_CONTROLS),
     ]
-    return snippets, square_j
+    return snippets, square_j, hover_j
 
 
-def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints):
+def tampconfig_hover_transfer(loc_a, loc_b, hover_a, hover_b):
+    """<Move> snippet straight between two locations' hover points, skipping
+    HOME - used while carrying a piece from a pick to its matching place."""
+    region_a, region_b = f"{loc_a.name.upper()}_HOVER", f"{loc_b.name.upper()}_HOVER"
+    return _move_xml(region_a, region_b, joints_to_controls(hover_a), joints_to_controls(hover_b))
+
+
+def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints, hover_joints):
     """piece is the logical plan-line id (e.g. 'e4_piece') matched by object=;
     kautham_name is the scene object it currently is (e.g. 'PEON_BLANCO'), passed
-    straight to kAttachObject/kDetachObject via <Obj>."""
+    straight to kAttachObject/kDetachObject via <Obj>.
+
+    <HomeControls> is the pose ktmpb_client's PICK.py/PLACE.py return to right
+    after grasping/placing, internally, regardless of the symbolic plan - it's
+    set to this location's hover (not the true HOME) so that retreat always
+    lifts straight up first, instead of swinging through the board at grasp
+    height (which could knock over a piece on an adjacent square)."""
     grasp_controls = joints_to_controls(square_joints)
+    hover_controls = joints_to_controls(hover_joints)
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
     return (
         f'<{tag} robot="UR3A" object="{piece.upper()}" region="{loc.name.upper()}">\n'
         f"    <Rob> ur3_right </Rob>\n    <Obj> {kautham_name} </Obj>{extra}\n"
         f"    <Cont>controls/right_ur3_with_gripper.cntr</Cont>\n"
-        f"    <HomeControls> {HOME_CONTROLS} </HomeControls>\n"
+        f"    <HomeControls> {hover_controls} </HomeControls>\n"
         f'    <GraspControls grasp="topgrasp"> {grasp_controls} </GraspControls>\n</{tag}>'
     )
 
@@ -292,8 +309,8 @@ if __name__ == "__main__":
         print(f"FK {name}: err={err_mm:.2f}mm")
 
     loc = Location.for_square("e4")
-    snippets, square_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
+    snippets, square_j, hover_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
     print(f"\n=== tampconfig snippets for {loc.name} ===")
     for s in snippets:
         print(s)
-    print(tampconfig_pick_or_place("Pick", "e4_piece", "PEON_BLANCO", loc, square_j))
+    print(tampconfig_pick_or_place("Pick", "e4_piece", "PEON_BLANCO", loc, square_j, hover_j))

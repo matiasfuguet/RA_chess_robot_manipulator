@@ -29,9 +29,11 @@ def _is_home(point, atol=1e-3):
     return all(abs(a - b) < atol for a, b in zip(point, HOME_JOINTS_RAW))
 
 
-def load_paths_from_taskfile(taskfile, step=20):
-    """Coge 1 de cada `step` puntos de cada bloque (baja step si choca, súbelo
-    para ir más recto), conservando siempre el punto final exacto."""
+def load_paths_from_taskfile(taskfile):
+    """El taskfile ya viene submuestreado por taskfile_simplify.py (que conserva
+    a proposito los puntos de hover/home aunque no caigan en su zancada) - aqui
+    no se vuelve a downsamplear, solo se lee tal cual. Downsamplear otra vez por
+    encima podria volver a perder esos puntos de seguridad."""
     tree = ET.parse(taskfile)
     root = tree.getroot()
     paths = []
@@ -48,11 +50,7 @@ def load_paths_from_taskfile(taskfile, step=20):
         if not points:
             continue
 
-        simplified_points = points[::step]
-        if simplified_points[-1] != points[-1]:
-            simplified_points.append(points[-1])
-
-        paths.append((block.tag, simplified_points))
+        paths.append((block.tag, points))
 
     return paths
 

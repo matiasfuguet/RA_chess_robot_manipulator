@@ -38,6 +38,7 @@ def joints_to_controls(joints_rad):
 
 
 HOME_CONTROLS = " ".join(f"{v:.6f}" for v in HOME_CONTROLS_LIST)
+HOME_JOINTS = kj.controls_to_joints(HOME_CONTROLS_LIST[:6])
 
 
 def _move_xml(region_from, region_to, init_c, goal_c):
@@ -48,20 +49,25 @@ def _move_xml(region_from, region_to, init_c, goal_c):
     )
 
 
-def _pick_or_place_xml(tag, piece, kautham_name, region, grasp_c):
+def _pick_or_place_xml(tag, piece, kautham_name, region, grasp_c, hover_c):
+    """<HomeControls> is the pose PICK.py/PLACE.py return to right after
+    grasping/placing - set to this location's hover (not true HOME) so retreat
+    always lifts straight up first. See square_to_joints.tampconfig_pick_or_place."""
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
     return (
         f'<{tag} robot="UR3A" object="{piece}" region="{region}">\n'
         f"    <Rob> ur3_right </Rob>\n    <Obj> {kautham_name} </Obj>{extra}\n"
         f"    <Cont>controls/right_ur3_with_gripper.cntr</Cont>\n"
-        f"    <HomeControls> {HOME_CONTROLS} </HomeControls>\n"
+        f"    <HomeControls> {hover_c} </HomeControls>\n"
         f'    <GraspControls grasp="topgrasp"> {grasp_c} </GraspControls>\n</{tag}>'
     )
 
 
 def build_location(name, grasp_joints):
-    """Computes hover joints (grasp pose + HOVER_HEIGHT in Z) and returns
-    the 3 Move snippets plus the grasp controls string for Pick/Place."""
+    """Computes hover joints (grasp pose + HOVER_HEIGHT in Z) and returns the 4
+    Move snippets (HOME<->hover, hover<->square, both ways), the grasp and hover
+    controls strings, and the raw hover joints (for simplify_taskfile's
+    keep_joints)."""
     grasp_pose = kj.forward_kinematics(grasp_joints)
     x, y, z, rx, ry, rz = grasp_pose
     hover_pose = (x, y, z + HOVER_HEIGHT, rx, ry, rz)
@@ -72,9 +78,10 @@ def build_location(name, grasp_joints):
     moves = [
         _move_xml("HOME", f"{region}_HOVER", HOME_CONTROLS, hover_c),
         _move_xml(f"{region}_HOVER", region, hover_c, grasp_c),
-        _move_xml(region, "HOME", grasp_c, HOME_CONTROLS),
+        _move_xml(region, f"{region}_HOVER", grasp_c, hover_c),
+        _move_xml(f"{region}_HOVER", "HOME", hover_c, HOME_CONTROLS),
     ]
-    return moves, grasp_c
+    return moves, grasp_c, hover_c, hover_joints
 
 
 def build_actions_list():
@@ -88,10 +95,24 @@ def build_actions_list():
 
     actions_list = []
     grasp_controls = {}
+    hover_controls = {}
+    keep_joints = [d5_joints, e4_joints, grave_joints]
     for name, joints in [("d5", d5_joints), ("e4", e4_joints), ("graveyard", grave_joints)]:
-        moves, grasp_c = build_location(name, joints)
+        moves, grasp_c, hover_c, hover_j = build_location(name, joints)
         grasp_controls[name] = grasp_c
+        hover_controls[name] = hover_c
+        keep_joints.append(hover_j)
         for snippet in moves:
+            elem = ET.fromstring(snippet)
+            actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
+
+    # One <Move> per pair of locations' hover points, so the domain's direct
+    # "hover -> hover" transfer (skipping HOME while carrying a piece) has
+    # somewhere real to be solved against.
+    names = list(hover_controls.keys())
+    for i, name_a in enumerate(names):
+        for name_b in names[i + 1:]:
+            snippet = _move_xml(f"{name_a.upper()}_HOVER", f"{name_b.upper()}_HOVER", hover_controls[name_a], hover_controls[name_b])
             elem = ET.fromstring(snippet)
             actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
 
@@ -101,12 +122,28 @@ def build_actions_list():
         ("Pick", "peon_blanco", "PEON_BLANCO", "e4"),
         ("Place", "peon_blanco", "PEON_BLANCO", "d5"),
     ]:
-        snippet = _pick_or_place_xml(tag, piece, kautham_name, region.upper(), grasp_controls[region])
+        snippet = _pick_or_place_xml(tag, piece, kautham_name, region.upper(), grasp_controls[region], hover_controls[region])
         elem = ET.fromstring(snippet)
         reader = PICK.Pick_read if tag == "Pick" else PLACE.Place_read
         actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": reader(elem)})
 
-    return actions_list
+    return actions_list, keep_joints
+
+
+def _drop_redundant_hover_moves(plan_lines):
+    """Pick/Place's own internal retreat now stops at this location's hover
+    (see _pick_or_place_xml's HomeControls) - re-solving that exact "region ->
+    region_hover" transition as a separate Move action is redundant. Drop it;
+    keep the next "hover -> home" leg, a real, separate hop."""
+    result = []
+    for line in plan_lines:
+        parts = line.split()
+        if parts[0].upper() == "MOVE" and parts[3].upper() == f"{parts[2].upper()}_HOVER" and result:
+            prev_parts = result[-1].split()
+            if prev_parts[0].upper() in ("PICK", "PLACE") and prev_parts[3].upper() == parts[2].upper():
+                continue
+        result.append(line)
+    return result
 
 
 def get_combined_plan():
@@ -139,14 +176,15 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objec
     import PICK  # noqa: F401
     import PLACE  # noqa: F401
 
-    combined_plan = get_combined_plan()
+    combined_plan = _drop_redundant_hover_moves(get_combined_plan())
     if not include_objects:
         combined_plan = [line for line in combined_plan if line.strip().lower().startswith("move")]
     print(f"Plan ({len(combined_plan)} lines):")
     for line in combined_plan:
         print(" ", line)
 
-    actions_list = build_actions_list()
+    actions_list, keep_joints = build_actions_list()
+    keep_joints.append(HOME_JOINTS)
 
     object_world_poses = {
         "PEON_NEGRO": list(kj.PEON_NEGRO_WORLD_POSE),
@@ -189,7 +227,7 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objec
 
     info.taskfile.write("</Task>\n")
     info.taskfile.close()
-    simplify_taskfile(taskfile_path)
+    simplify_taskfile(taskfile_path, keep_joints=keep_joints)
     node.get_logger().info(f"Results saved in {taskfile_path}")
     node.destroy_node()
     rclpy.shutdown()
