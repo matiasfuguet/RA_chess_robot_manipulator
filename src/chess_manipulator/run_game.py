@@ -9,6 +9,7 @@ Needs `ros2 run downward_ros2 downward_server` running for build_combined_plan()
 and the Kautham ROS node running too for run_on_kautham() (see __main__).
 """
 
+import json
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -26,6 +27,7 @@ for _path in (FILE_DIR, KTMPB_CLIENT_DIR):
         sys.path.append(_path)
 
 import square_to_joints as sj
+from taskfile_simplify import simplify_taskfile
 
 DOMAIN_NAME = "chesscapture"
 
@@ -172,6 +174,13 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     everything touched across the whole move list, parsed through the
     *unmodified* Move_read/Pick_read/Place_read from ktmpb_client so the
     resulting dicts are exactly the shape MOVE.py/PICK.py/PLACE.py expect.
+    Returns (actions_list, square_joints, hover_joints) - the latter two
+    (location name -> joint list) feed the hover-waypoint manifest written
+    in run_on_kautham, since PICK/PLACE's own internal retreat/approach
+    step (ktmpb_client's PICK.py/PLACE.py) solves straight to/from HOME and
+    can skip the hover stop entirely once an object is already attached -
+    the manifest lets mover_robot_simplificado.py reinsert it on the real
+    robot regardless of what ktmpb's path happened to do.
 
     piece_to_kautham: dict mapping each logical piece name (e.g.
     "e4_piece") to the real Kautham scene object it represents (e.g.
@@ -187,10 +196,12 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     seed = seed if seed is not None else sj.D5_SEED_JOINTS
     actions_list = []
     square_joints = {}
+    hover_joints = {}
 
     for name, loc in locations.items():
-        snippets, square_j = sj.tampconfig_move_actions(loc, seed=seed)
+        snippets, square_j, hover_j = sj.tampconfig_move_actions(loc, seed=seed)
         square_joints[name] = square_j
+        hover_joints[name] = hover_j
         seed = square_j
         for snippet in snippets:
             elem = ET.fromstring(snippet)
@@ -204,7 +215,7 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
         reader = PICK.Pick_read if action_type == "Pick" else PLACE.Place_read
         actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": reader(elem)})
 
-    return actions_list
+    return actions_list, square_joints, hover_joints
 
 
 # Known world-frame poses (Kautham frame, axis-angle) for the scene's two
@@ -219,12 +230,92 @@ DEFAULT_PIECE_TO_KAUTHAM = {"e4_piece": "PEON_BLANCO", "e6_piece": "PEON_NEGRO"}
 KAUTHAM_PROBLEM_FILE = "OMPL_RRTConnect_chess_pawn_capture.xml"
 ROBOT_HOME_CONTROLS = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, 0.813]
 
+# Parked well outside the UR3's ~500mm reach - used instead of the real
+# per-square pose when include_objects=False. The pawns must still exist as
+# named Obstacles in the scene (kAttachObject/kDetachObject look them up by
+# name and segfault Kautham's C++ core outright if the name doesn't resolve
+# at all - it's not return-value-checked like a graceful failure would be),
+# they just need to never be near any grasp pose. Kautham's attach preserves
+# the *world* offset between object and link at the moment of attaching (it
+# does not snap the object onto the link) - so each piece needs its own spot,
+# or the dragged copy of one collides with the other parked at the same point.
+PARKING_SPOTS = {
+    "PEON_NEGRO": [-0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
+    "PEON_BLANCO": [0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
+}
+
+# Sideways (X) offset applied to a piece's last-known pose right before
+# attaching. square_to_joints.py's real-robot-calibrated grasp pose puts the
+# pawn deep inside Kautham's simulated robotiq_85 hand (not just grazing the
+# fingertips - same root cause as the documented e4 mismatch), and
+# Robot::attachObject refuses to attach anything currently in collision.
+# Tried lifting in Z first: at 3cm it still collided with the fingertip link,
+# at 6cm with the base link, at 4.5cm with a knuckle link - the closed hand
+# has no vertical gap at all. 8cm sideways clears the whole hand assembly -
+# this is a real, valid gap, not a hard collision, confirmed by the fact
+# that the SAME exact setup sometimes solves and sometimes reports "No path
+# found": RRTConnect is randomized and was timing out (default 10s) before
+# its sampling found the gap. Fixed via MAX_PLANNING_TIME below instead of
+# growing this further - the inconsistency was a search-budget problem, not
+# a geometry problem.
+ATTACH_CLEARANCE_X = 0.08
+
+# Default Kautham planning budget (10s, set in the scene XML) was timing
+# out before RRTConnect's randomized sampling found the narrow-but-real gap
+# left by ATTACH_CLEARANCE_X, causing the same setup to solve on some runs
+# and fail on others. Applied globally right after kOpenProblem.
+MAX_PLANNING_TIME_SECONDS = "60"
+
+
+def _drop_redundant_home_moves(plan_lines):
+    """PICK/PLACE always retreat to HOME internally as part of their own
+    Kautham execution (see PICK.py/PLACE.py's second kSetQuery/kSolve call,
+    goal->init). The PDDL domain still emits a separate symbolic
+    "move rob region home" action right after each one (needed for the
+    *planner's* state-tracking, since pick/place don't update "at" in their
+    :effect) - but re-solving that exact same just-traversed transition via
+    Kautham is pure redundant work, and is what was throwing the
+    OMPLCONSTRPLANNER "vector::_M_range_check" exception (the object is
+    still attached at that point, routing through the constrained planner,
+    which is apparently the fragile part). Drop those lines instead of
+    executing them."""
+    result = []
+    for line in plan_lines:
+        parts = line.split()
+        if parts[0].upper() == "MOVE" and parts[3].upper() == "HOME" and result:
+            prev_parts = result[-1].split()
+            if prev_parts[0].upper() in ("PICK", "PLACE") and prev_parts[3].upper() == parts[2].upper():
+                continue  # redundant - pick/place already retreated here
+        result.append(line)
+    return result
+
 
 def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
                     scenario_folder_path, piece_to_kautham=None,
-                    object_world_poses=None, show_rviz=False):
+                    object_world_poses=None, show_rviz=False, include_objects=True):
     """Replays the combined plan through Kautham. Requires the kautham_ros
-    ROS 2 node already running (see __main__ below)."""
+    ROS 2 node already running (see __main__ below).
+
+    With include_objects=False, the pawns stay in the scene (Pick/Place need
+    them to exist by name for kAttachObject/kDetachObject - see
+    PARKING_SPOTS's comment) but get parked far from the robot instead of at
+    their real per-square pose whenever they're not actively being grasped,
+    so the grasp-pose query can't be rejected by them. This sidesteps the
+    known sim-only mismatch: square_to_joints.py's joint values are
+    calibrated for the real robot, not Kautham's UR3+robotiq_85 model, so
+    the calculated grasp pose can graze the simulated pawn mesh even though
+    it's correct on the real gripper.
+
+    Since attach preserves the world offset between object and link instead
+    of snapping to zero, kAttachObject/kDetachObject are monkeypatched here
+    (on the same cached kautham_ros_interface_python module PICK.py/PLACE.py
+    import, so it applies transparently to their calls too) to restore each
+    piece to its last-known real pose - offset sideways by ATTACH_CLEARANCE_X
+    so attach doesn't refuse it as already-in-collision - immediately before
+    attaching it, and re-park it immediately after detaching - tracked via
+    kGetObstaclePos right after each detach, since that's wherever the piece actually ended
+    up. Trade-off: the pawns won't visually sit on the board in Kautham
+    while not being held, only right at pick/place moments."""
     import rclpy
     from rclpy.node import Node
     import kautham_ros.kautham_ros_interface_python as kautham
@@ -234,14 +325,38 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     import PLACE  # noqa: F401
 
     piece_to_kautham = piece_to_kautham or DEFAULT_PIECE_TO_KAUTHAM
-    object_world_poses = object_world_poses or DEFAULT_OBJECT_WORLD_POSES
-    actions_list = build_actions_list(locations, pieces, piece_to_kautham)
+    real_object_poses = object_world_poses or DEFAULT_OBJECT_WORLD_POSES
+    if include_objects:
+        object_world_poses = real_object_poses
+    else:
+        last_known_pose = dict(real_object_poses)
+        object_world_poses = {name: PARKING_SPOTS[name] for name in real_object_poses}
+        real_attach, real_detach = kautham.kAttachObject, kautham.kDetachObject
+
+        def _attach_at_last_known_pose(node_, robot_name, link_name, obsname):
+            lifted = list(last_known_pose[obsname])
+            lifted[0] += ATTACH_CLEARANCE_X
+            kautham.kSetObstaclePos(node_, obsname, lifted)
+            return real_attach(node_, robot_name, link_name, obsname)
+
+        def _detach_and_park(node_, obsname):
+            result = real_detach(node_, obsname)
+            pose = kautham.kGetObstaclePos(node_, obsname)
+            if pose:
+                last_known_pose[obsname] = list(pose)
+            kautham.kSetObstaclePos(node_, obsname, PARKING_SPOTS[obsname])
+            return result
+
+        kautham.kAttachObject = _attach_at_last_known_pose
+        kautham.kDetachObject = _detach_and_park
+    actions_list, square_joints, hover_joints = build_actions_list(locations, pieces, piece_to_kautham)
 
     rclpy.init()
     node = Node("chess_game_runner")
     node.show_rviz = show_rviz
 
     kautham.kOpenProblem(node, models_folder_path, os.path.join(scenario_folder_path, KAUTHAM_PROBLEM_FILE))
+    kautham.kSetPlannerParameter(node, "_Max Planning Time", MAX_PLANNING_TIME_SECONDS)
     for kautham_name, pose in object_world_poses.items():
         kautham.kSetObstaclePos(node, kautham_name, pose)
 
@@ -249,7 +364,26 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     kautham.kSetQuery(node, ROBOT_HOME_CONTROLS, [])
     ktmpb.ktmpbMoveRobot(node, controls=ROBOT_HOME_CONTROLS, sample_type="init")
 
-    taskfile_path = os.path.join(scenario_folder_path, "taskfile_chess_game.xml")
+    taskfile_name = "taskfile_chess_game.xml" if include_objects else "taskfile_chess_game_no_objects.xml"
+    taskfile_path = os.path.join(scenario_folder_path, taskfile_name)
+
+    # Hover-waypoint manifest for mover_robot_simplificado.py (see
+    # build_actions_list's docstring) - one entry per location actually
+    # touched in this game, so it can reinsert the hover stop by matching
+    # joint values, regardless of whether ktmpb's own solved path did.
+    hover_manifest_path = taskfile_path.rsplit(".xml", 1)[0] + "_hover.json"
+    with open(hover_manifest_path, "w") as f:
+        json.dump(
+            [
+                {
+                    "square": [float(x) for x in square_joints[name]],
+                    "hover": [float(x) for x in hover_joints[name]],
+                }
+                for name in locations
+            ],
+            f,
+        )
+
     info = ktmpb.knowledge()
     info.taskfile = open(taskfile_path, "w+")
     info.taskfile.write('<?xml version="1.0"?>\n')
@@ -259,7 +393,7 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
         info.taskfile.write(f'\t\t<Object object="{kautham_name}"> {pos_str} </Object>\n')
     info.taskfile.write("\t</Initialstate>\n")
 
-    for line in combined_plan:
+    for line in _drop_redundant_home_moves(combined_plan):
         action = ktmpb.find_action_for_plan_line(line, actions_list)
         if not action:
             node.get_logger().error(f"Could not match action for line: {line}")
@@ -272,6 +406,15 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
     info.taskfile.write("</Task>\n")
     info.taskfile.close()
+    try:
+        simplify_taskfile(taskfile_path)
+    except ET.ParseError as exc:
+        # PICK.py leaves <Transfer> open until the matching PLACE closes it
+        # (see find_action_for_plan_line's break above) - if an action fails
+        # mid-Transfer, the taskfile is left genuinely malformed. The real
+        # error is already logged above; skip simplification rather than
+        # raising a confusing XML traceback on top of it.
+        node.get_logger().error(f"Taskfile is malformed (an action above probably failed mid-Transfer) - skipping simplification: {exc}")
     node.get_logger().info(f"Results saved in {taskfile_path}")
     node.destroy_node()
     rclpy.shutdown()
@@ -301,10 +444,12 @@ if __name__ == "__main__":
     # Requires `ros2 run downward_ros2 downward_server` running in another
     # (sourced) terminal, and `ros2 run kautham_ros kautham_ros_node` in a
     # third for the taskfile-generation step.
-    #   python3 run_game.py path/to/game.txt
+    #   python3 run_game.py path/to/game.txt [--no-objects]
     # falls back to the built-in 2-move demo if no file is given.
-    if len(sys.argv) > 1:
-        board, moves = load_game_file(sys.argv[1])
+    include_objects = "--no-objects" not in sys.argv
+    game_file_args = [a for a in sys.argv[1:] if a != "--no-objects"]
+    if game_file_args:
+        board, moves = load_game_file(game_file_args[0])
         piece_to_kautham = {p: p for p in board.values()}
     else:
         board = {"e4": "e4_piece", "e6": "e6_piece"}
@@ -332,4 +477,5 @@ if __name__ == "__main__":
     run_on_kautham(combined_plan, locations, pieces,
                     models_folder_path="",
                     scenario_folder_path=FILE_DIR,
-                    piece_to_kautham=piece_to_kautham)
+                    piece_to_kautham=piece_to_kautham,
+                    include_objects=include_objects)

@@ -1,7 +1,0 @@
-<?xml version="1.0"?>
-<Task name="OMPL_RRTConnect_chess_pawn_capture.xml">
-	<Initialstate>
-		<Object object="PEON_NEGRO"> 0.058 0.053 0.06 0.013345 -0.99958 0.025736 3.147323 </Object>
-		<Object object="PEON_BLANCO"> 0.003 -0.003 0.057 0.012559 -0.999036 0.042071 3.185071 </Object>
-	</Initialstate>
-</Task>

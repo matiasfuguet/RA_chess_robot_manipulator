@@ -23,6 +23,7 @@ for _path in (FILE_DIR, KTMPB_CLIENT_DIR):
         sys.path.append(_path)
 
 import kautham_square_to_joints as kj
+from taskfile_simplify import simplify_taskfile
 
 PI = np.pi
 GRIPPER_CONTROL = 0.813
@@ -130,7 +131,12 @@ def get_combined_plan():
     return plan
 
 
-def run(models_folder_path, scenario_folder_path, show_rviz=False):
+def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objects=True):
+    """With include_objects=False, the two pawns are left out of the Kautham
+    scene entirely and only the `move` plan lines run (no pick/place, since
+    those need a real object to attach to) - lets the robot's transit paths
+    be checked in isolation, without Kautham's grasp-pose collision checks
+    getting in the way."""
     import rclpy
     from rclpy.node import Node
     import kautham_ros.kautham_ros_interface_python as kautham
@@ -140,6 +146,8 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False):
     import PLACE  # noqa: F401
 
     combined_plan = get_combined_plan()
+    if not include_objects:
+        combined_plan = [line for line in combined_plan if line.strip().lower().startswith("move")]
     print(f"Plan ({len(combined_plan)} lines):")
     for line in combined_plan:
         print(" ", line)
@@ -149,14 +157,15 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False):
     object_world_poses = {
         "PEON_NEGRO": list(kj.PEON_NEGRO_WORLD_POSE),
         "PEON_BLANCO": list(kj.PEON_BLANCO_WORLD_POSE),
-    }
+    } if include_objects else {}
+
+    scene_file = "OMPL_RRTConnect_chess_pawn_capture.xml" if include_objects else "OMPL_RRTConnect_chess_pawn_capture_no_objects.xml"
 
     rclpy.init()
     node = Node("kautham_demo_runner")
     node.show_rviz = show_rviz
 
-    kautham.kOpenProblem(node, models_folder_path,
-                          os.path.join(scenario_folder_path, "OMPL_RRTConnect_chess_pawn_capture.xml"))
+    kautham.kOpenProblem(node, models_folder_path, os.path.join(scenario_folder_path, scene_file))
     for name, pose in object_world_poses.items():
         kautham.kSetObstaclePos(node, name, pose)
 
@@ -164,10 +173,11 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False):
     kautham.kSetQuery(node, HOME_CONTROLS_LIST, [])
     ktmpb.ktmpbMoveRobot(node, controls=HOME_CONTROLS_LIST, sample_type="init")
 
-    taskfile_path = os.path.join(scenario_folder_path, "taskfile_kautham_demo.xml")
+    taskfile_name = "taskfile_kautham_demo.xml" if include_objects else "taskfile_kautham_demo_no_objects.xml"
+    taskfile_path = os.path.join(scenario_folder_path, taskfile_name)
     info = ktmpb.knowledge()
     info.taskfile = open(taskfile_path, "w+")
-    info.taskfile.write('<?xml version="1.0"?>\n<Task name="OMPL_RRTConnect_chess_pawn_capture.xml">\n\t<Initialstate>\n')
+    info.taskfile.write(f'<?xml version="1.0"?>\n<Task name="{scene_file}">\n\t<Initialstate>\n')
     for name, pose in object_world_poses.items():
         info.taskfile.write(f'\t\t<Object object="{name}"> {" ".join(str(x) for x in pose)} </Object>\n')
     info.taskfile.write("\t</Initialstate>\n")
@@ -185,6 +195,7 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False):
 
     info.taskfile.write("</Task>\n")
     info.taskfile.close()
+    simplify_taskfile(taskfile_path)
     node.get_logger().info(f"Results saved in {taskfile_path}")
     node.destroy_node()
     rclpy.shutdown()
@@ -198,4 +209,4 @@ if __name__ == "__main__":
     # - passing a non-empty folder here double-prefixes them and
     # kOpenProblem fails outright ("ERROR Opening Kautham Problem"),
     # which then makes every subsequent Set*/Solve call fail too.
-    run(models_folder_path="", scenario_folder_path=FILE_DIR)
+    run(models_folder_path="", scenario_folder_path=FILE_DIR, include_objects="--no-objects" not in sys.argv)

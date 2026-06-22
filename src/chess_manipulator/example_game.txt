@@ -1,11 +1,16 @@
 # Initial board: SQUARE=PIECE_NAME
 # Piece names must be PEON_NEGRO/PEON_BLANCO for the taskfile-generation
 # step - those are the only 2 real objects in the Kautham scene.
-e4=PEON_BLANCO
-e6=PEON_NEGRO
+e2=PEON_BLANCO
+d5=PEON_NEGRO
 
-# Moves (UCI, one per line, in order)
-e4e5
-e6e5
-e5d4
-d4c3
+# Moves (UCI, one per line, in order) - 1.e4 d5(implied) 2...dxe4, then
+# black advances. Legal pawn play: white double-steps onto e4, black
+# captures diagonally (the only way a pawn capture is actually legal),
+# then the survivor advances straight ahead.
+# (Picked e4/e5/e6 as the well-exercised file - d4 specifically has a
+# known pick-and-retreat-with-attached-object reachability issue, see
+# project_chess_manipulator_state memory.)
+e2e4
+d5e4
+e4e3

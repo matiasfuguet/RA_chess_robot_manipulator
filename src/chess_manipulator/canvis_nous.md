@@ -135,9 +135,40 @@ cd src/chess_manipulator
 python3 run_kautham_demo.py
 ```
 
+**Modo sin piezas (`--no-objects`):** quita las dos piezas (PEON_NEGRO/PEON_BLANCO)
+de la escena de Kautham y ejecuta solo los movimientos `move` del plan (sin pick/place,
+que necesitan un objeto real al que agarrarse). Sirve para revisar únicamente las
+trayectorias del robot sin que la detección de colisiones de Kautham interfiera con el
+agarre exacto de las piezas — ese ajuste fino se deja para el robot real.
+```bash
+python3 run_kautham_demo.py --no-objects
+```
+
 ---
 
-## 5. Limitación conocida y pendiente: calibración visual en Kautham
+## 5. `taskfile_simplify.py`
+
+**Qué hace:** Reduce el número de waypoints `<Conf>` que `MOVE.py`/`PICK.py`/`PLACE.py`
+(de `ktmpb_client`, sin modificar) escriben dentro de cada bloque `<Transit>`/`<Transfer>`
+del taskfile. RRTConnect devuelve la solución sin simplificar (cientos de puntos muy
+próximos entre sí), y reproducir eso punto a punto en `kautham-gui` (sección 4 del
+`README.md`) es lo que hacía que el robot tardase mucho en cada movimiento.
+
+La lógica es la misma que ya usaba `mover_robot_simplificado.py` (en la raíz del repo,
+pensado para el robot real): quedarse con 1 de cada `step` puntos (por defecto 20) y
+asegurar siempre que el punto final exacto se conserva, para no perder precisión en el
+destino. Se aplica automáticamente al taskfile generado, justo después de cerrarlo, en
+`run_kautham_demo.py` y `run_game.py` — no hace falta ningún paso manual.
+
+**Cómo probarlo solo:**
+```python
+from taskfile_simplify import simplify_taskfile
+simplify_taskfile("taskfile_kautham_demo.xml", step=20)
+```
+
+---
+
+## 6. Limitación conocida y pendiente: calibración visual en Kautham
 
 Con `kautham_square_to_joints.py`, la secuencia completa d5 (recoger negro, llevarlo
 al graveyard) funciona de principio a fin en Kautham, incluyendo el agarre y la
@@ -157,3 +188,4 @@ generación del plan PDDL, solo a la visualización de e4 específicamente en Ka
 | Probar la geometría/cinemática de Kautham | `python3 kautham_square_to_joints.py` |
 | Generar el plan + taskfile de una partida propia | `python3 run_game.py mi_partida.txt` |
 | Ver la demo original e4xd5 en Kautham (visualización corregida) | `python3 run_kautham_demo.py` |
+| Ver solo el movimiento del robot en Kautham, sin las piezas (sin colisiones) | `python3 run_kautham_demo.py --no-objects` |

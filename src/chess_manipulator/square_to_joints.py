@@ -260,7 +260,14 @@ def joints_to_controls(joints_rad):
     return " ".join(f"{v:.6f}" for v in controls)
 
 
-HOME_CONTROLS = joints_to_controls(D5_SEED_JOINTS)
+# HOME used to be literally D5_SEED_JOINTS - i.e. sitting right at d5's
+# grasp height, table-level, with no real clearance from whatever's on or
+# near that square. Now a directly-taught joint config, well above the
+# board (see "home" in posiciones_reales.md) - taken straight from the
+# real robot rather than derived via IK, so there's no convergence risk.
+HOME_JOINTS_DEG = [79.77, -80.75, 55.31, -68.87, -87.87, 348.59]
+HOME_JOINTS = [d * np.pi / 180.0 for d in HOME_JOINTS_DEG]
+HOME_CONTROLS = joints_to_controls(HOME_JOINTS)
 
 
 def _move_xml(region_from, region_to, init_controls, goal_controls):
@@ -274,8 +281,10 @@ def _move_xml(region_from, region_to, init_controls, goal_controls):
 
 def tampconfig_move_actions(loc, seed=None):
     """3 <Move> XML snippets: HOME<->hover, hover<->square. Returns
-    (snippets, square_joints) - square_joints is reused by the matching
-    Pick/Place GraspControls."""
+    (snippets, square_joints, hover_joints) - square_joints is reused by
+    the matching Pick/Place GraspControls; hover_joints is reused by
+    run_game.py to build the hover-waypoint manifest for the real-robot
+    runner (see HOVER_MANIFEST in mover_robot_simplificado.py)."""
     hover_j = joints_for(loc.hover_pose, seed=seed)
     square_j = joints_for(loc.pose, seed=hover_j)
     hover_c, square_c = joints_to_controls(hover_j), joints_to_controls(square_j)
@@ -285,7 +294,7 @@ def tampconfig_move_actions(loc, seed=None):
         _move_xml(f"{region}_HOVER", region, hover_c, square_c),
         _move_xml(region, "HOME", square_c, HOME_CONTROLS),
     ]
-    return snippets, square_j
+    return snippets, square_j, hover_j
 
 
 def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints):
@@ -318,7 +327,7 @@ if __name__ == "__main__":
         print(f"FK {name}: err={err_mm:.2f}mm")
 
     loc = Location.for_square("e4")
-    snippets, square_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
+    snippets, square_j, hover_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
     print()
     print(f"=== tampconfig snippets for {loc.name} ===")
     for s in snippets:

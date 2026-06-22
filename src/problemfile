@@ -1,0 +1,30 @@
+(define (problem chess_move)
+
+(:domain chesscapture)
+
+(:objects
+    e4 e4_hover e3 e3_hover home - location
+    PEON_NEGRO - obstacle
+    ur3a - robot
+)
+
+(:init
+    (at ur3a home)
+    (handEmpty)
+    (clear home)
+    (is_home home)
+    (clear e3)
+    (in PEON_NEGRO e4)
+    (is_hover e4_hover)
+    (above e4_hover e4)
+    (valid_zone e4)
+    (is_hover e3_hover)
+    (above e3_hover e3)
+    (valid_zone e3)
+)
+
+(:goal
+    (and (in PEON_NEGRO e3) (at ur3a home))
+)
+
+)
