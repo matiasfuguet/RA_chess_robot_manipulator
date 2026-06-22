@@ -1,152 +1,103 @@
 # chess_manipulator
 
-Carpeta autónoma con el escenario TAMP de captura de peón de ajedrez con robot UR3.  
-El peón negro ocupa d5 y el peón blanco e4. El objetivo es que el blanco capture al negro: el negro va al graveyard y el blanco ocupa d5.
+Pipeline TAMP para que un UR3e juegue una partida de ajedrez moviendo peones:
+planificación lógica (Fast Downward) + planificación geométrica (Kautham / OMPL
+RRTConnect) → taskfile → ejecución en el robot real.
 
-El dominio obliga al robot a regresar a la posición neutra (home) entre cada acción de manipulación, modelado mediante el predicado `(connected)` que restringe los movimientos a pasar siempre por `home`.
+A partir de una lista de movimientos UCI se resuelve cada uno por separado (el
+dominio de manipulación no sabe de reglas de ajedrez), se concatenan los planes
+y se genera un taskfile con las trayectorias articulares. Las capturas se
+expanden en dos episodios: la pieza capturada va al graveyard y la pieza que
+captura ocupa la casilla. El robot vuelve a HOME entre cada acción.
 
----
+## Requisitos
 
-## Estructura de la carpeta
+Hacen falta dos servicios en marcha (en terminales aparte, ya sourceadas con
+`source /opt/ros/jazzy/setup.bash && source ~/ws_tamp/install/setup.bash`):
+
+```bash
+# Planificador lógico
+~/ws_tamp/install/downward_ros2/lib/downward_ros2/downward_server
+
+# Planificador geométrico (Kautham)
+QT_QPA_PLATFORM=xcb ~/ws_tamp/install/kautham_ros/lib/kautham_ros/kautham_ros_node
+```
+
+## 1. Generar el taskfile (`run_game.py`)
+
+```bash
+python3 run_game.py example_game.txt --no-objects
+```
+
+Genera `taskfile_chess_game_no_objects.xml` y, en `../../plans/`, el plan simbólico
+ejecutado (`MOVE`/`PICK`/`PLACE`, en orden) para revisarlo antes de tocar el robot.
+La opción `--no-objects` aparca las piezas lejos del robot en la escena de Kautham
+en lugar de ponerlas en su casilla real: los valores articulares de
+`square_to_joints.py` están calibrados para el robot real, no para el modelo
+UR3+robotiq_85 de Kautham, así que con las piezas en su sitio la pose de agarre
+simulada chocaría con la malla del peón. Es el modo que se usa para el robot real.
+
+### Formato del fichero de partida
+
+```
+# Tablero inicial: CASILLA=PIEZA  (solo PEON_BLANCO / PEON_NEGRO)
+e2=PEON_BLANCO
+d5=PEON_NEGRO
+
+# Movimientos UCI, uno por línea
+e2e4
+d5e4
+```
+
+Los nombres de pieza deben ser `PEON_BLANCO`/`PEON_NEGRO`: son los dos únicos
+objetos definidos en la escena de Kautham. Las casillas se limitan a
+`REACHABLE_RANKS` (filas 2-8). El pipeline no valida la legalidad de los
+movimientos, solo los ejecuta.
+
+## 2. Ejecutar en el robot real (`robot/mover_robot_simplificado.py`)
+
+Copia la carpeta `robot/` (con `pinza10UR3.py`/`pinza40UR3.py`) y el taskfile al
+PC del robot — ver `robot_pc_files.zip` — y ejecútalo desde ahí. Antes de
+conectar, escribe en `plans/robot_plan_preview.txt` cada `movej` y cada apertura/
+cierre de pinza que va a mandar, para poder revisarlo sin haber movido el robot
+todavía. Luego lee el taskfile, manda cada punto por el socket (puerto 30002) y
+abre/cierra la pinza entre Transit y Transfer. Solo depende de la stdlib.
+
+## 3. Vista previa en simulación
+
+Para revisar una secuencia en Kautham antes de tocar el robot:
+
+```bash
+# Demo e4-captura-d5 con la cinemática calibrada para sim
+python3 run_kautham_demo.py --no-objects
+```
+
+O cargar un taskfile en la GUI:
+
+```bash
+QT_QPA_PLATFORM=xcb kautham-gui
+```
+
+1. **File → Open Problem** → `OMPL_RRTConnect_chess_pawn_capture.xml`
+2. **TAMP → Load Taskfile** → el taskfile generado
+3. **Play**
+
+## Estructura
 
 ```
 chess_manipulator/
-├── ff-domains/
-│   ├── domain_chess.pddl            # Dominio PDDL con restriccion home via (connected)
-│   └── problem_chess.pddl           # Problema: casillas reales e4/d5/graveyard/home
-├── controls/
-│   └── right_ur3_with_gripper.cntr  # Fichero de controles cinematicos del UR3
-├── launch/
-│   └── chess_pawn_capture.launch.py # Script ROS 2 launch del pipeline TAMP
-├── OMPL_RRTConnect_chess_pawn_capture.xml  # Escena Kautham (robot + piezas)
-├── tampconfig_chess.xml             # Config TAMP: regiones, estados, acciones
-└── README.md                        # Este fichero
+├── run_game.py                  # pipeline principal (UCI -> taskfile)
+├── square_to_joints.py          # cinemática + geometría del tablero (robot REAL)
+├── taskfile_simplify.py         # submuestrea los waypoints del taskfile
+├── run_kautham_demo.py          # demo original para visualización en sim
+├── kautham_square_to_joints.py  # cinemática calibrada para el modelo de Kautham
+├── example_game.txt             # partida de ejemplo
+├── ff-domains/                  # dominio y problema PDDL
+├── controls/                    # fichero de controles cinemáticos del UR3
+└── OMPL_RRTConnect_chess_pawn_capture*.xml  # escenas de Kautham
 ```
 
----
-
-## 1. Compilar el workspace
-
-```bash
-cd ~/ws_tamp
-colcon build --symlink-install
-source install/setup.bash
-```
-
-Si `ros2 run` no está disponible, instalarlo con:
-
-```bash
-sudo apt install ros-jazzy-ros2run
-```
-
----
-
-## 2. Ejecutar solo la Planificación Lógica (Fast Downward)
-
-### Opción A — directamente con fast-downward (más simple)
-
-```bash
-fast-downward \
-  src/chess_manipulator/ff-domains/domain_chess.pddl \
-  src/chess_manipulator/ff-domains/problem_chess.pddl \
-  --evaluator "hff=ff()" \
-  --search "lazy_greedy([hff], preferred=[hff])"
-```
-
-### Opción B — via ROS 2 (servidor + cliente en dos terminales)
-
-**Terminal 1** — arrancar el servidor:
-```bash
-source /opt/ros/jazzy/setup.bash && source ~/ws_tamp/install/setup.bash
-ros2 run downward_ros2 downward_server
-```
-
-**Terminal 2** — lanzar el cliente:
-```bash
-source /opt/ros/jazzy/setup.bash && source ~/ws_tamp/install/setup.bash
-ros2 run downward_ros2 downward_client \
-  --ros-args \
-  -p domain_param:=domain_chess \
-  -p problem_param:=problem_chess \
-  -p pddl_folder_path_param:=$(pwd)/src/chess_manipulator/ff-domains/
-```
-
-> El servidor debe estar en marcha antes de lanzar el cliente. El ejecutable se llama `downward_client`, no `downward_node`.
-
-El planificador genera el plan simbólico por stdout. La secuencia esperada es:
-
-```
-move ur3a home e4
-pick ur3a peon_blanco e4
-move ur3a e4 home
-move ur3a home d5
-place ur3a peon_blanco d5
-pick ur3a peon_negro d5
-move ur3a d5 home
-move ur3a home graveyard
-place ur3a peon_negro graveyard
-```
-
-El plan también se guarda en el fichero `sas_plan` del directorio de trabajo.
-
----
-
-## 3. Ejecutar el pipeline TAMP completo (Lógica + Geometría Kautham)
-
-### Opción A — via ROS 2 launch (recomendado)
-
-```bash
-source /opt/ros/jazzy/setup.bash && source ~/ws_tamp/install/setup.bash
-ros2 launch src/chess_manipulator/launch/chess_pawn_capture.launch.py
-```
-
-El script detecta automáticamente la ruta de `tampconfig_chess.xml` relativa a su propia ubicación.
-
-### Opción B — via ktmpb_client directamente
-
-```bash
-source /opt/ros/jazzy/setup.bash && source ~/ws_tamp/install/setup.bash
-ros2 run ktmpb_client ktmpb_client \
-  --ros-args \
-  -p config:=$(pwd)/src/chess_manipulator/tampconfig_chess.xml
-```
-
-El cliente invoca iterativamente al planificador lógico y al planificador geométrico (OMPL RRTConnect) para cada par de regiones definido en `<Actions>`. El resultado se guarda como `taskfile_tampconfig_chess.xml` junto al tampconfig.
-
----
-
-## 4. Validación visual en kautham-gui
-
-1. Abre la interfaz gráfica:
-   ```bash
-   kautham-gui
-   ```
-2. Menú **File → Open Problem** y selecciona:
-   ```
-   src/chess_manipulator/OMPL_RRTConnect_chess_pawn_capture.xml
-   ```
-3. Menú **TAMP → Load Taskfile** y selecciona:
-   ```
-   src/chess_manipulator/taskfile_tampconfig_chess.xml
-   ```
-4. Pulsa **Play** para reproducir la secuencia completa de movimientos del robot.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-ros2 launch ktmpb_client ktmpb_full.launch.py \
-  models_folder_path:=/usr/share/kautham/demos/models \
-  scenario_folder_path:=/home/gerard/Escritorio/IA/6t/RA/Practica_final1/RA_chess_robot_manipulator/src/chess_manipulator \
-  tamp_config_filename:=tampconfig_chess_real.xml
+> El robot real se controla desde `robot/mover_robot_simplificado.py`, con las
+> pinzas `robot/pinza10UR3.py`/`robot/pinza40UR3.py`. Las posiciones taught y la
+> calibración están en `docs/posiciones_reales.md`. Ver la estructura completa
+> del repo en el README de la raíz.

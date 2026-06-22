@@ -1,11 +1,8 @@
-"""Runs the original e4-captures-d5 demo (ff-domains/problem_chess.pddl)
-through the live Kautham stack, using kautham_square_to_joints.py's
-calibrated kinematics for every location's joint config - separate from
-run_game.py/square_to_joints.py on purpose, since those stay calibrated
-for the real robot.
+"""Run the original e4-captures-d5 demo (ff-domains/problem_chess.pddl) through
+Kautham, using kautham_square_to_joints.py's sim-calibrated kinematics. Kept
+separate from run_game.py so square_to_joints.py stays real-robot-only.
 
-Needs `ros2 run downward_ros2 downward_server` and a kautham_ros node
-running first (see __main__ at the bottom).
+Needs the downward_server and a kautham_ros node running (see README).
 """
 
 import os
@@ -28,11 +25,10 @@ from taskfile_simplify import simplify_taskfile
 PI = np.pi
 GRIPPER_CONTROL = 0.813
 HOME_CONTROLS_LIST = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, GRIPPER_CONTROL]
-HOVER_HEIGHT = 0.0585  # same design choice as the real robot's calibrated hover height
+HOVER_HEIGHT = 0.0585  # matches the real robot's hover height
 
-# Trusted as correct for Kautham (same author/methodology as the d5/e4
-# grasp values we validated to <0.3mm) - graveyard isn't a scene Object,
-# so there's no independent world pose to check this against directly.
+# Validated for Kautham, same method as the d5/e4 configs. The graveyard isn't a
+# scene Object, so there's no world pose to check it against independently.
 GRAVEYARD_GRASP_CONTROLS = [0.400, 0.390, 0.840, 0.320, 0.375, 0.375]
 
 
@@ -132,11 +128,9 @@ def get_combined_plan():
 
 
 def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objects=True):
-    """With include_objects=False, the two pawns are left out of the Kautham
-    scene entirely and only the `move` plan lines run (no pick/place, since
-    those need a real object to attach to) - lets the robot's transit paths
-    be checked in isolation, without Kautham's grasp-pose collision checks
-    getting in the way."""
+    """With include_objects=False the pawns are left out of the scene and only the
+    `move` lines run (pick/place need an object to attach to), so the transit
+    paths can be checked without grasp-pose collision checks in the way."""
     import rclpy
     from rclpy.node import Node
     import kautham_ros.kautham_ros_interface_python as kautham
@@ -202,11 +196,6 @@ def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objec
 
 
 if __name__ == "__main__":
-    # models_folder_path is empty on purpose: kOpenProblem prepends this
-    # to every relative path in the scene file, but
-    # OMPL_RRTConnect_chess_pawn_capture.xml's model paths are already
-    # absolute (fixed for kautham-gui, which has no models-folder field)
-    # - passing a non-empty folder here double-prefixes them and
-    # kOpenProblem fails outright ("ERROR Opening Kautham Problem"),
-    # which then makes every subsequent Set*/Solve call fail too.
+    # models_folder_path="" on purpose: the scene file's model paths are absolute,
+    # and kOpenProblem prepends this folder, so a non-empty one would double it.
     run(models_folder_path="", scenario_folder_path=FILE_DIR, include_objects="--no-objects" not in sys.argv)

@@ -1,31 +1,17 @@
-"""Given a board square (or graveyard slot), get a UR3e joint config and
-the matching ktmpb tampconfig Action XML. Three parts, in one file because
-they're really one job:
+"""Map a board square (or graveyard slot) to a UR3e joint config and the
+matching ktmpb tampconfig XML. Kinematics, board geometry and XML generation
+live together here because they're one job.
 
-1. Kinematics: forward/inverse kinematics for the UR3e arm, chain taken
-   verbatim from Kautham's own UR3e description
-   (/usr/share/kautham/demos/models/robots/robot_descriptions/UR/config/ur3e/default_kinematics.yaml),
-   with a calibrated BASE_OFFSET correction (the bare-arm chain's output
-   was off from the real robot's recorded frame by a near-constant ~348mm
-   in Z - most likely an unmodeled stand/riser - fit from 3 known points).
-
-2. Board geometry: interpolates Cartesian poses for any square/graveyard
-   slot from those same 3 calibration points (d5, e4, graveyard rank 5 -
-   see posiciones_reales.md).
-
-3. tampconfig generation: turns a Location + joint config into the
-   <Move>/<Pick>/<Place> XML snippets ktmpb's tampconfig format expects.
-
-Known limitation: rank 1, the rank-2 corners (a2/h2), and graveyard slots
-2-3's hover pose don't converge with this solver - either a genuine reach
-limit that far from where d5/e4 were taught, or a branch the locally
-seeded search can't find. REACHABLE_RANKS/GRAVEYARD_REACHABLE_SLOTS scope
-around this for now.
+The UR3e chain is taken from Kautham's own description, plus a calibrated
+BASE_OFFSET fitted from 3 taught points (d5, e4, graveyard rank 5 - see
+posiciones_reales.md). Rank 1, the rank-2 corners and graveyard slots 2-3 don't
+converge from the d5/e4 seed, so REACHABLE_RANKS/GRAVEYARD_REACHABLE_SLOTS scope
+them out.
 """
 
 import numpy as np
 
-# ---------------------------------------------------------------- kinematics
+# --- kinematics ---
 
 # (xyz, rpy) per segment, base -> shoulder_pan -> ... -> wrist_3.
 SEGMENTS = [
@@ -36,9 +22,8 @@ SEGMENTS = [
     ((0, -0.08535, -1.750557762378351e-11), (1.570796327, 0, 0)),
     ((0, 0.0921, -1.8890025766262e-11), (1.570796326589793, 3.141592653589793, 3.141592653589793)),
 ]
-# TCP offset (gripper fingertip) from abrir_pinza.py/cerrar_pinza.py's set_tcp(p[0,0,0.2286,0,0,0]).
-TCP_OFFSET = np.array([0.0, 0.0, 0.2286])
-BASE_OFFSET = np.array([-0.015467, 0.013733, -0.347767])  # see module docstring
+TCP_OFFSET = np.array([0.0, 0.0, 0.2286])  # gripper fingertip, along tool Z
+BASE_OFFSET = np.array([-0.015467, 0.013733, -0.347767])  # fitted from taught points
 
 
 def _rot_x(a):
@@ -118,15 +103,11 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
 
 
 def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8, num_steps=10):
-    """Damped least-squares IK, seeded from a nearby known joint config so
-    it converges to the same kinematic branch the real robot was taught
-    with. Falls back to walking through num_steps interpolated waypoints
-    if the seed is too far for direct convergence (a big board jump) -
-    interpolating orientation via the *relative* rotation, since two
-    rotvecs near theta=pi can look like near-opposites component-wise
-    while representing nearly the same rotation (axis-angle sign
-    ambiguity), which would otherwise make naive lerp build a nonsense
-    intermediate target."""
+    """Damped least-squares IK, seeded from a nearby known config so it lands on
+    the same branch the robot was taught with. If the seed is too far for a
+    direct solve, walk there through num_steps waypoints, interpolating
+    orientation via the *relative* rotation (component-wise lerp of two rotvecs
+    near theta=pi can build a nonsense target)."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
     if ok:
         return q
@@ -147,35 +128,30 @@ def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8, num_st
     return q
 
 
-# ------------------------------------------------------------- board geometry
+# --- board geometry ---
 
 FILES = "abcdefgh"
 
-# d5's known joint config (rad) - central reference, used to seed IK for
-# any other square so the solver converges to the real robot's branch.
+# d5's taught config (rad), used to seed IK everywhere else.
 D5_SEED_JOINTS = [d * np.pi / 180.0 for d in [59.03, -87.19, 111.60, -116.73, -88.17, 327.52]]
 
-# (x, y, z) in metres, from posiciones_reales.md (mm converted to m).
+# Taught (x, y, z) in metres, from posiciones_reales.md.
 _D5_POS, _E4_POS, _GRAVEYARD_RANK5_POS = (
     (-0.05185, -0.32145, -0.35752), (0.01077, -0.38227, -0.36040), (-0.29999, -0.32143, -0.35758),
 )
 _D5_FILE, _D5_RANK, _E4_FILE, _E4_RANK, _GRAVEYARD_FILE = 4, 5, 5, 4, 0
 
-# d5 and the graveyard agree on orientation; e4's recorded value is the
-# noisy outlier (taught by hand, ~2-3 degrees off) so it's not used here.
+# d5 and the graveyard agree on orientation; e4's hand-taught value is a few
+# degrees off, so it's not used here.
 ORIENTATION = (0.0425, -3.146, 0.081)
-# Hover is a pure +Z translation, calibrated from real hover-vs-grasp
-# joint pairs (~58.5mm, not the 10cm originally envisioned).
-HOVER_HEIGHT = 0.0585
+HOVER_HEIGHT = 0.0585  # measured from real hover-vs-grasp joint pairs
 
 REACHABLE_RANKS = range(2, 9)
 GRAVEYARD_REACHABLE_SLOTS = range(4, 9)
 
-# file_axis: displacement per +1 file step, from d5 -> graveyard (same
-# rank, so purely along the file direction).
+# Displacement per +1 file step (d5 -> graveyard, same rank).
 FILE_AXIS = tuple((d - g) / (_D5_FILE - _GRAVEYARD_FILE) for d, g in zip(_D5_POS, _GRAVEYARD_RANK5_POS))
-# rank_axis: e4 - d5 is one diagonal step (+1 file, -1 rank); subtract the
-# file component to isolate the rank component.
+# Per +1 rank step: e4-d5 is one diagonal (+1 file, -1 rank); strip the file part.
 RANK_AXIS = tuple(
     (e - d - f * (_E4_FILE - _D5_FILE)) / (_E4_RANK - _D5_RANK)
     for e, d, f in zip(_E4_POS, _D5_POS, FILE_AXIS)
@@ -198,15 +174,14 @@ def graveyard_pose(slot):
 
 
 def hover_pose(pose):
-    """Pre-grasp approach pose: same pose, lifted HOVER_HEIGHT in Z."""
+    """Same pose, lifted HOVER_HEIGHT in Z."""
     x, y, z, rx, ry, rz = pose
     return (x, y, z + HOVER_HEIGHT, rx, ry, rz)
 
 
 def joints_for(pose, seed=None):
-    """UR3e joint config (rad) for a Cartesian pose, seeded from d5's
-    known config or a caller-supplied seed (e.g. the previous location's
-    solution, for smoother continuity along a planned path)."""
+    """Joint config for a Cartesian pose. Seed from the previous location's
+    solution when chaining a path, otherwise from d5."""
     return inverse_kinematics(pose, seed if seed is not None else D5_SEED_JOINTS)
 
 
@@ -240,19 +215,18 @@ class Location:
         return [f"(is_hover {self.hover_name})", f"(above {self.hover_name} {self.name})", f"(valid_zone {self.name})"]
 
 
-# --------------------------------------------------------- tampconfig XML
+# --- tampconfig XML ---
 
 PI = 3.141592653589793
-GRIPPER_CONTROL = 0.813  # constant placeholder; actual open/close is done via
-# kAttachObject/kDetachObject in PICK.py/PLACE.py, not this control vector.
+GRIPPER_CONTROL = 0.813  # placeholder; open/close is done via attach/detach, not this slot
 
 
 def joints_to_controls(joints_rad):
-    """6 joint angles (rad) -> normalized [0,1] control vector string (+
-    constant gripper slot), using the corrected formula from posiciones_reales.md."""
+    """6 joint angles (rad) -> normalized [0,1] control string + gripper slot
+    (normalization per posiciones_reales.md; joint 3, the elbow, uses a 2pi range)."""
     controls = []
     for i, q in enumerate(joints_rad):
-        norm = (q + PI) / (2 * PI) if i == 2 else (q + 2 * PI) / (4 * PI)  # joint 3 (elbow) differs
+        norm = (q + PI) / (2 * PI) if i == 2 else (q + 2 * PI) / (4 * PI)
         if not 0.0 <= norm <= 1.0:
             raise ValueError(f"joint {i} normalized to {norm:.4f}, outside [0,1] (q={q:.4f} rad)")
         controls.append(norm)
@@ -260,11 +234,7 @@ def joints_to_controls(joints_rad):
     return " ".join(f"{v:.6f}" for v in controls)
 
 
-# HOME used to be literally D5_SEED_JOINTS - i.e. sitting right at d5's
-# grasp height, table-level, with no real clearance from whatever's on or
-# near that square. Now a directly-taught joint config, well above the
-# board (see "home" in posiciones_reales.md) - taken straight from the
-# real robot rather than derived via IK, so there's no convergence risk.
+# Directly-taught home, well above the board (see "home" in posiciones_reales.md).
 HOME_JOINTS_DEG = [79.77, -80.75, 55.31, -68.87, -87.87, 348.59]
 HOME_JOINTS = [d * np.pi / 180.0 for d in HOME_JOINTS_DEG]
 HOME_CONTROLS = joints_to_controls(HOME_JOINTS)
@@ -280,9 +250,8 @@ def _move_xml(region_from, region_to, init_controls, goal_controls):
 
 
 def tampconfig_move_actions(loc, seed=None):
-    """3 <Move> XML snippets: HOME<->hover, hover<->square. Returns
-    (snippets, square_joints) - square_joints is reused by the matching
-    Pick/Place GraspControls."""
+    """3 <Move> snippets (HOME<->hover, hover<->square). Returns (snippets,
+    square_joints); square_joints feeds the matching Pick/Place GraspControls."""
     hover_j = joints_for(loc.hover_pose, seed=seed)
     square_j = joints_for(loc.pose, seed=hover_j)
     hover_c, square_c = joints_to_controls(hover_j), joints_to_controls(square_j)
@@ -296,11 +265,9 @@ def tampconfig_move_actions(loc, seed=None):
 
 
 def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints):
-    """piece is the logical PDDL/plan-line identifier (e.g. 'e4_piece') -
-    used for the object= attribute that find_action_for_plan_line matches
-    against. kautham_name is the actual Kautham scene object this piece
-    currently represents (e.g. 'PEON_BLANCO') - used in <Obj>, which
-    PICK.py/PLACE.py pass straight to kAttachObject/kDetachObject."""
+    """piece is the logical plan-line id (e.g. 'e4_piece') matched by object=;
+    kautham_name is the scene object it currently is (e.g. 'PEON_BLANCO'), passed
+    straight to kAttachObject/kDetachObject via <Obj>."""
     grasp_controls = joints_to_controls(square_joints)
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
     return (
@@ -313,7 +280,7 @@ def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints):
 
 
 if __name__ == "__main__":
-    # Cross-check against the 3 known real-robot points.
+    # Cross-check FK against the 3 taught points.
     known = {
         "d5": ([59.03, -87.19, 111.60, -116.73, -88.17, 327.52], (-0.05185, -0.32145, -0.35752, 0.042, -3.146, 0.081)),
         "e4": ([71.64, -75.35, 99.23, -117.66, -86.09, 340.34], (0.01077, -0.38227, -0.36040, 0.040, -3.182, 0.134)),
@@ -326,8 +293,7 @@ if __name__ == "__main__":
 
     loc = Location.for_square("e4")
     snippets, square_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
-    print()
-    print(f"=== tampconfig snippets for {loc.name} ===")
+    print(f"\n=== tampconfig snippets for {loc.name} ===")
     for s in snippets:
         print(s)
     print(tampconfig_pick_or_place("Pick", "e4_piece", "PEON_BLANCO", loc, square_j))

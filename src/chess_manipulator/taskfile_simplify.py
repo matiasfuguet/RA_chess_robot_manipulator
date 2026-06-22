@@ -1,10 +1,7 @@
-"""Downsamples the dense per-step RRTConnect waypoints that MOVE.py/PICK.py/
-PLACE.py (ktmpb_client) write into every Transit/Transfer <Conf> block - same
-"keep 1 of every `step` points, always keep the exact last one" logic
-mover_robot_simplificado.py uses for the real robot, applied here to the
-taskfile itself so kautham-gui playback doesn't crawl through every
-unsimplified waypoint.
-"""
+"""Downsample the dense RRTConnect waypoints in each Transit/Transfer block:
+keep 1 of every `step`, plus the exact last one, so kautham-gui playback isn't
+slowed by every waypoint. Same idea mover_robot_simplificado.py uses for the
+real robot."""
 
 import xml.etree.ElementTree as ET
 

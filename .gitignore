@@ -8,3 +8,11 @@ __pycache__/
 src/chess_manipulator/taskfile_chess_game.xml
 src/chess_manipulator/taskfile_tampconfig_chess.xml
 src/chess_manipulator/taskfile_tampconfig_chess_real.xml
+
+# Fast Downward runtime artifacts (regenerated on every run)
+domainfile.pddl
+problemfile
+sas_plan
+
+# Plan/preview review artifacts (regenerated on every run)
+plans/

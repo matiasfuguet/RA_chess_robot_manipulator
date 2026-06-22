@@ -1,30 +1,15 @@
 """Kautham-visualization-only counterpart to square_to_joints.py.
 
-square_to_joints.py is calibrated purely against the REAL robot's measured
-data and must stay that way - it's what eventually drives the real UR3e.
-This module is separate on purpose: Kautham's scene uses a *different*
-robot model (the scene's xacro defaults ur_type to "ur3", not "ur3e" -
-see ur3_robotiq_85_gripper.urdf.xacro) and a *different* gripper
-(robotiq_85 in simulation vs. the real OnRobot RG2), so the same joint
-values that correctly grasp a piece on the real robot land ~17cm off in
-Kautham. This is exactly the same kind of mismatch CHANGES.md already
-documented; this module fixes it for visualization without touching
-anything the real robot depends on.
+square_to_joints.py is calibrated for the REAL robot and must stay that way.
+Kautham's scene uses a different model (UR3, not UR3e, and a robotiq_85 gripper
+instead of the real OnRobot RG2), so the same joint values land ~17cm off in
+sim. This module recalibrates for visualization without touching anything the
+real robot depends on, fitted against the validated d5/e4 grasp configs and the
+piece world poses in OMPL_RRTConnect_chess_pawn_capture.xml.
 
-Calibrated against tampconfig_chess.xml's existing validated d5/e4 grasp
-joint configs (the SAME joint angles used in tampconfig_chess_real.xml,
-per CHANGES.md - "the <Actions> block is identical in both files") and
-their corresponding world-frame piece positions already defined in
-OMPL_RRTConnect_chess_pawn_capture.xml.
-
-Found while calibrating: the robot's world-placement rotation must use
-the *negative* of the XML's stated TH (matches CHANGES.md's prose -
-"rotated -pi/2 around Z" - even though the raw <Home TH=.../> value is
-positive; Kautham's axis-angle sign convention here is the opposite of
-the naive reading). With that fix, X/Y matched the known piece positions
-to sub-millimeter precision; only a consistent ~169mm Z residual
-remained, absorbed into BASE_OFFSET below (almost certainly the
-robotiq_85 gripper's TCP length, which differs from the real gripper's).
+Note: the robot's world placement uses the *negative* of the scene XML's TH
+(Kautham's axis-angle sign convention); the leftover ~169mm Z residual is the
+robotiq_85 TCP length, absorbed into BASE_OFFSET.
 """
 
 import numpy as np
@@ -113,10 +98,9 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
 
 
 def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8):
-    """Damped least-squares IK for Kautham's UR3 model. See
-    square_to_joints.inverse_kinematics for the same algorithm with the
-    waypoint-stepping fallback, omitted here since this module is only
-    used for the 2 known pieces so far, both within easy reach of d5/e4."""
+    """Damped least-squares IK for Kautham's UR3 model. No waypoint-stepping
+    fallback (cf. square_to_joints) - only the 2 known pieces are used here,
+    both within easy reach of the d5/e4 seed."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
     if not ok:
         raise RuntimeError(f"IK did not converge towards {target_pose}")
@@ -133,9 +117,8 @@ def _axis_angle_to_matrix(x, y, z, wx, wy, wz, th):
     return t
 
 
-# Robot placement in Kautham world frame, from OMPL_RRTConnect_chess_pawn_capture.xml's
-# <Robot><Home TH="1.570796327" WZ="1.0" WY="0.0" WX="0.0" Z="0.0" Y="0.0" X="0.37" />.
-# Note the negated TH - see module docstring.
+# Robot placement in the Kautham world frame, from the scene's <Robot><Home>
+# (X=0.37, axis +Z). TH is negated - see module docstring.
 _WORLD_T_ROBOT = _axis_angle_to_matrix(0.37, 0, 0, 0, 0, 1, -1.570796327)
 _ROBOT_T_WORLD = np.linalg.inv(_WORLD_T_ROBOT)
 
@@ -158,13 +141,12 @@ def controls_to_joints(controls):
     return [c * 2 * PI - PI if i == 2 else c * 4 * PI - 2 * PI for i, c in enumerate(controls)]
 
 
-# Known-good simulation grasp configs, from tampconfig_chess.xml's existing
-# Pick D5 / Pick E4 GraspControls (already correct for Kautham, used here
-# only to calibrate/validate BASE_OFFSET above - not needed at runtime).
+# Validated sim grasp configs (Kautham d5/e4 GraspControls), used only to
+# calibrate/check BASE_OFFSET above.
 _D5_GRASP_CONTROLS = [0.581986, 0.378903, 0.810000, 0.337875, 0.377542, 0.954889]
 _E4_GRASP_CONTROLS = [0.599500, 0.395347, 0.775639, 0.336583, 0.380431, 0.972694]
 
-# Known world-frame piece poses, from OMPL_RRTConnect_chess_pawn_capture.xml.
+# Piece world poses from the scene file.
 PEON_NEGRO_WORLD_POSE = (0.058, 0.053, 0.060, 0.013345, -0.999580, 0.025736, 3.147323)
 PEON_BLANCO_WORLD_POSE = (0.003, -0.003, 0.057, 0.012559, -0.999036, 0.042071, 3.185071)
 
