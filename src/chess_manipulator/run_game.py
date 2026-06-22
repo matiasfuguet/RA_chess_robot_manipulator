@@ -49,7 +49,7 @@ def _episode_pddl(piece, src_loc, dst_loc, extra_init_clear):
     return init, f"(in {piece} {dst_loc.name})"
 
 
-def build_move_episode(board, move_uci, used_graveyard_slots, problem_name="chess_move"):
+def build_move_episode(board, move_uci, used_graveyard_slots):
     """Build one move's PDDL problem. board maps square->piece (state before the
     move). A capture becomes two episodes: captured piece -> graveyard, then
     capturing piece -> destination. Returns a dict with pddl_text, new_board,
@@ -97,7 +97,7 @@ def build_move_episode(board, move_uci, used_graveyard_slots, problem_name="ches
     obstacles = [moving_piece] + ([captured_piece] if captured_piece else [])
 
     pddl_text = (
-        f"(define (problem {problem_name})\n\n(:domain {DOMAIN_NAME})\n\n"
+        f"(define (problem chess_move)\n\n(:domain {DOMAIN_NAME})\n\n"
         f"(:objects\n    {' '.join(location_names)} - location\n"
         f"    {' '.join(obstacles)} - obstacle\n    ur3a - robot\n)\n\n"
         f"(:init\n    " + "\n    ".join(init_facts) + "\n)\n\n"
@@ -117,20 +117,15 @@ with open(os.path.join(FILE_DIR, "ff-domains", "domain_chess.pddl")) as _f:
     DOMAIN_TEXT = _f.read()
 
 
-def build_combined_plan(board, moves, downward_client=None):
+def build_combined_plan(board, moves):
     """Solve every move and concatenate the plans. board maps square->piece
     (starting state); moves is a list of UCI strings. Returns (plan_lines,
-    locations, pieces, final_board), locations/pieces deduplicated by name.
-
-    Pass a downward_client to reuse an rclpy session; otherwise one is created
-    and torn down here."""
+    locations, pieces, final_board), locations/pieces deduplicated by name."""
     import rclpy
     import ktmpb_python_interface as ktmpb
 
-    owns_session = downward_client is None
-    if owns_session:
-        rclpy.init()
-        downward_client = ktmpb.DownwardClient()
+    rclpy.init()
+    downward_client = ktmpb.DownwardClient()
 
     combined_plan = []
     locations = {}
@@ -150,9 +145,8 @@ def build_combined_plan(board, moves, downward_client=None):
         board = episode["new_board"]
         used_graveyard_slots = episode["new_used_graveyard_slots"]
 
-    if owns_session:
-        downward_client.destroy_node()
-        rclpy.shutdown()
+    downward_client.destroy_node()
+    rclpy.shutdown()
 
     return combined_plan, locations, pieces, board
 
@@ -211,7 +205,6 @@ DEFAULT_OBJECT_WORLD_POSES = {
     "PEON_NEGRO": [0.058, 0.053, 0.060, 0.013345, -0.999580, 0.025736, 3.147323],
     "PEON_BLANCO": [0.003, -0.003, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
 }
-DEFAULT_PIECE_TO_KAUTHAM = {"e4_piece": "PEON_BLANCO", "e6_piece": "PEON_NEGRO"}
 KAUTHAM_PROBLEM_FILE = "OMPL_RRTConnect_chess_pawn_capture.xml"
 ROBOT_HOME_CONTROLS = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, 0.813]
 
@@ -254,7 +247,7 @@ def _drop_redundant_home_moves(plan_lines):
 
 
 def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
-                    scenario_folder_path, piece_to_kautham=None,
+                    scenario_folder_path, piece_to_kautham,
                     object_world_poses=None, show_rviz=False, include_objects=True):
     """Replay the combined plan through Kautham and write the taskfile. Needs the
     kautham_ros node already running.
@@ -274,7 +267,6 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     import PICK  # noqa: F401
     import PLACE  # noqa: F401
 
-    piece_to_kautham = piece_to_kautham or DEFAULT_PIECE_TO_KAUTHAM
     real_object_poses = object_world_poses or DEFAULT_OBJECT_WORLD_POSES
     if include_objects:
         object_world_poses = real_object_poses
@@ -389,16 +381,12 @@ def load_game_file(path):
 if __name__ == "__main__":
     # Needs the downward_server and kautham_ros node running (see README).
     #   python3 run_game.py path/to/game.txt [--no-objects]
-    # With no file, falls back to a built-in 2-move demo.
     include_objects = "--no-objects" not in sys.argv
     game_file_args = [a for a in sys.argv[1:] if a != "--no-objects"]
-    if game_file_args:
-        board, moves = load_game_file(game_file_args[0])
-        piece_to_kautham = {p: p for p in board.values()}
-    else:
-        board = {"e4": "e4_piece", "e6": "e6_piece"}
-        moves = ["e4e5", "e6e5"]  # advance, then capture on e5
-        piece_to_kautham = DEFAULT_PIECE_TO_KAUTHAM
+    if not game_file_args:
+        sys.exit("usage: python3 run_game.py path/to/game.txt [--no-objects]")
+    board, moves = load_game_file(game_file_args[0])
+    piece_to_kautham = {p: p for p in board.values()}
 
     combined_plan, locations, pieces, final_board = build_combined_plan(board, moves)
 

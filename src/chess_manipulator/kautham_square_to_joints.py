@@ -141,23 +141,6 @@ def controls_to_joints(controls):
     return [c * 2 * PI - PI if i == 2 else c * 4 * PI - 2 * PI for i, c in enumerate(controls)]
 
 
-# Validated sim grasp configs (Kautham d5/e4 GraspControls), used only to
-# calibrate/check BASE_OFFSET above.
-_D5_GRASP_CONTROLS = [0.581986, 0.378903, 0.810000, 0.337875, 0.377542, 0.954889]
-_E4_GRASP_CONTROLS = [0.599500, 0.395347, 0.775639, 0.336583, 0.380431, 0.972694]
-
 # Piece world poses from the scene file.
 PEON_NEGRO_WORLD_POSE = (0.058, 0.053, 0.060, 0.013345, -0.999580, 0.025736, 3.147323)
 PEON_BLANCO_WORLD_POSE = (0.003, -0.003, 0.057, 0.012559, -0.999036, 0.042071, 3.185071)
-
-
-if __name__ == "__main__":
-    for name, controls, world_pose in [
-        ("d5/PEON_NEGRO", _D5_GRASP_CONTROLS, PEON_NEGRO_WORLD_POSE),
-        ("e4/PEON_BLANCO", _E4_GRASP_CONTROLS, PEON_BLANCO_WORLD_POSE),
-    ]:
-        joints = controls_to_joints(controls)
-        computed = forward_kinematics(joints)
-        target = world_pose_to_robot_frame(*world_pose)
-        err_mm = np.linalg.norm(computed[:3] - np.array(target[:3])) * 1000
-        print(f"{name}: computed_pos={np.round(computed[:3], 4)} target_pos={np.round(target[:3], 4)} err={err_mm:.2f}mm")

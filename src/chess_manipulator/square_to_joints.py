@@ -102,29 +102,12 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
     return q, False
 
 
-def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8, num_steps=10):
+def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8):
     """Damped least-squares IK, seeded from a nearby known config so it lands on
-    the same branch the robot was taught with. If the seed is too far for a
-    direct solve, walk there through num_steps waypoints, interpolating
-    orientation via the *relative* rotation (component-wise lerp of two rotvecs
-    near theta=pi can build a nonsense target)."""
+    the same branch the robot was taught with."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
-    if ok:
-        return q
-
-    start_pose = forward_kinematics(seed_joints)
-    start_pos, start_rot = start_pose[:3], _rotvec_to_rotmat(start_pose[3:])
-    target_pos, target_rot = np.array(target_pose[:3]), _rotvec_to_rotmat(np.array(target_pose[3:]))
-    relative_rotvec = _rotmat_to_rotvec(target_rot @ start_rot.T)
-
-    q = np.array(seed_joints, dtype=float)
-    for step in range(1, num_steps + 1):
-        alpha = step / num_steps
-        waypoint_rot = _rotvec_to_rotmat(alpha * relative_rotvec) @ start_rot
-        waypoint = np.concatenate([start_pos + alpha * (target_pos - start_pos), _rotmat_to_rotvec(waypoint_rot)])
-        q, ok = _ik_attempt(waypoint, q, max_iters, tol)
-        if not ok:
-            raise RuntimeError(f"IK did not converge at waypoint {step}/{num_steps} towards {target_pose}")
+    if not ok:
+        raise RuntimeError(f"IK did not converge towards {target_pose}")
     return q
 
 
@@ -294,23 +277,3 @@ def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints, hover
         f"    <HomeControls> {hover_controls} </HomeControls>\n"
         f'    <GraspControls grasp="topgrasp"> {grasp_controls} </GraspControls>\n</{tag}>'
     )
-
-
-if __name__ == "__main__":
-    # Cross-check FK against the 3 taught points.
-    known = {
-        "d5": ([59.03, -87.19, 111.60, -116.73, -88.17, 327.52], (-0.05185, -0.32145, -0.35752, 0.042, -3.146, 0.081)),
-        "e4": ([71.64, -75.35, 99.23, -117.66, -86.09, 340.34], (0.01077, -0.38227, -0.36040, 0.040, -3.182, 0.134)),
-        "graveyard5": ([30.45, -59.38, 73.70, -105.48, -87.28, 292.92], (-0.29999, -0.32143, -0.35758, 0.043, -3.146, 0.081)),
-    }
-    for name, (joints_deg, measured) in known.items():
-        computed = forward_kinematics([d * np.pi / 180 for d in joints_deg])
-        err_mm = np.linalg.norm(computed[:3] - np.array(measured[:3])) * 1000
-        print(f"FK {name}: err={err_mm:.2f}mm")
-
-    loc = Location.for_square("e4")
-    snippets, square_j, hover_j = tampconfig_move_actions(loc, seed=D5_SEED_JOINTS)
-    print(f"\n=== tampconfig snippets for {loc.name} ===")
-    for s in snippets:
-        print(s)
-    print(tampconfig_pick_or_place("Pick", "e4_piece", "PEON_BLANCO", loc, square_j, hover_j))
