@@ -1,4 +1,3 @@
-import json
 import math
 import socket
 import time
@@ -20,16 +19,6 @@ ENABLE_PINZA = True
 Abrir_pinza = BASE_DIR / "pinza40UR3.py"
 Cerrar_pinza = BASE_DIR / "pinza10UR3.py"
 TASKFILE = BASE_DIR / "src/chess_manipulator/taskfile_chess_game_no_objects.xml"
-
-# Manifesto generado por run_game.py junto al taskfile (mismo nombre, sufijo
-# "_hover"): lista de {"square": [...6 joints...], "hover": [...6 joints...]}
-# por cada casilla realmente usada en la partida. PICK/PLACE (en
-# ktmpb_client, codigo compartido del lab, no de este repo) resuelven su
-# propio tramo home<->agarre internamente, y una vez el robot ya lleva una
-# pieza agarrada, ese tramo interno puede ir derecho sin pasar por el hover
-# - aqui se usa el manifesto para reinsertar esa parada por valor de
-# articulaciones, sin depender de como haya resuelto el camino ktmpb.
-HOVER_MANIFEST = BASE_DIR / "src/chess_manipulator/taskfile_chess_game_no_objects_hover.json"
 
 # En el taskfile de Kautham, los 6 joints del UR3 salen en estas posiciones.
 UR3_JOINT_SLICE = slice(9, 15)
@@ -84,45 +73,6 @@ def load_paths_from_taskfile(taskfile, step=20):
         paths.append((block.tag, simplified_points))
 
     return paths
-
-
-def _load_hover_manifest(path):
-    if not path.exists():
-        print(f"Aviso: no encuentro {path} - no puedo garantizar la parada en hover.")
-        return []
-    with open(path) as f:
-        return json.load(f)
-
-
-def _close_enough(a, b, atol=1e-3):
-    return all(abs(x - y) < atol for x, y in zip(a, b))
-
-
-def _ensure_hover_before_squares(paths, manifest):
-    """Inserta un movej explicito al hover justo antes de llegar a
-    cualquier casilla conocida (por el manifesto), si el punto
-    inmediatamente anterior no es ya ese hover. Necesario porque PICK/PLACE
-    (ktmpb_client, no es codigo de este repo) resuelven su propio tramo
-    home<->agarre por su cuenta, y una vez la pieza ya esta agarrada ese
-    tramo puede ir derecho a la siguiente casilla sin pasar por el hover -
-    aqui se garantiza la parada por valor de articulaciones, sin depender
-    de por donde haya resuelto el camino ktmpb."""
-    if not manifest:
-        return paths
-
-    prev = None
-    new_paths = []
-    for kind, points in paths:
-        new_points = []
-        for point in points:
-            match = next((m for m in manifest if _close_enough(point, m["square"])), None)
-            if match and not (prev is not None and _close_enough(prev, match["hover"])):
-                new_points.append(match["hover"])
-            new_points.append(point)
-            prev = point
-        new_paths.append((kind, new_points))
-
-    return new_paths
 
 
 # Los ficheros exportados de pinza (pinza10UR3.py/pinza40UR3.py) son
@@ -181,7 +131,6 @@ if not paths:
         f"No hay bloques Transit/Transfer con Conf en {TASKFILE}. "
         "Genera primero el taskfile con Kautham/TAMP."
     )
-paths = _ensure_hover_before_squares(paths, _load_hover_manifest(HOVER_MANIFEST))
 print(f"Cargados {len(paths)} bloques de trayectoria desde {TASKFILE}")
 
 # Conexión via socket a la controladora del robot

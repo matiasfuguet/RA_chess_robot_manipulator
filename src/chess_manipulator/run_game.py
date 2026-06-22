@@ -9,7 +9,6 @@ Needs `ros2 run downward_ros2 downward_server` running for build_combined_plan()
 and the Kautham ROS node running too for run_on_kautham() (see __main__).
 """
 
-import json
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -174,13 +173,6 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     everything touched across the whole move list, parsed through the
     *unmodified* Move_read/Pick_read/Place_read from ktmpb_client so the
     resulting dicts are exactly the shape MOVE.py/PICK.py/PLACE.py expect.
-    Returns (actions_list, square_joints, hover_joints) - the latter two
-    (location name -> joint list) feed the hover-waypoint manifest written
-    in run_on_kautham, since PICK/PLACE's own internal retreat/approach
-    step (ktmpb_client's PICK.py/PLACE.py) solves straight to/from HOME and
-    can skip the hover stop entirely once an object is already attached -
-    the manifest lets mover_robot_simplificado.py reinsert it on the real
-    robot regardless of what ktmpb's path happened to do.
 
     piece_to_kautham: dict mapping each logical piece name (e.g.
     "e4_piece") to the real Kautham scene object it represents (e.g.
@@ -196,12 +188,10 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     seed = seed if seed is not None else sj.D5_SEED_JOINTS
     actions_list = []
     square_joints = {}
-    hover_joints = {}
 
     for name, loc in locations.items():
-        snippets, square_j, hover_j = sj.tampconfig_move_actions(loc, seed=seed)
+        snippets, square_j = sj.tampconfig_move_actions(loc, seed=seed)
         square_joints[name] = square_j
-        hover_joints[name] = hover_j
         seed = square_j
         for snippet in snippets:
             elem = ET.fromstring(snippet)
@@ -215,7 +205,7 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
         reader = PICK.Pick_read if action_type == "Pick" else PLACE.Place_read
         actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": reader(elem)})
 
-    return actions_list, square_joints, hover_joints
+    return actions_list
 
 
 # Known world-frame poses (Kautham frame, axis-angle) for the scene's two
@@ -349,7 +339,7 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
         kautham.kAttachObject = _attach_at_last_known_pose
         kautham.kDetachObject = _detach_and_park
-    actions_list, square_joints, hover_joints = build_actions_list(locations, pieces, piece_to_kautham)
+    actions_list = build_actions_list(locations, pieces, piece_to_kautham)
 
     rclpy.init()
     node = Node("chess_game_runner")
@@ -366,24 +356,6 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
     taskfile_name = "taskfile_chess_game.xml" if include_objects else "taskfile_chess_game_no_objects.xml"
     taskfile_path = os.path.join(scenario_folder_path, taskfile_name)
-
-    # Hover-waypoint manifest for mover_robot_simplificado.py (see
-    # build_actions_list's docstring) - one entry per location actually
-    # touched in this game, so it can reinsert the hover stop by matching
-    # joint values, regardless of whether ktmpb's own solved path did.
-    hover_manifest_path = taskfile_path.rsplit(".xml", 1)[0] + "_hover.json"
-    with open(hover_manifest_path, "w") as f:
-        json.dump(
-            [
-                {
-                    "square": [float(x) for x in square_joints[name]],
-                    "hover": [float(x) for x in hover_joints[name]],
-                }
-                for name in locations
-            ],
-            f,
-        )
-
     info = ktmpb.knowledge()
     info.taskfile = open(taskfile_path, "w+")
     info.taskfile.write('<?xml version="1.0"?>\n')
