@@ -7,7 +7,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent  # repo_root/robot
 REPO_ROOT = BASE_DIR.parent
 
-HOST = "10.10.73.234"  # robot UR
+HOST = "10.10.73.235"  # robot UR
 PORT = 30002
 
 ENABLE_PINZA = True
@@ -30,10 +30,12 @@ def _is_home(point, atol=1e-3):
 
 
 def load_paths_from_taskfile(taskfile):
-    """El taskfile ya viene submuestreado por taskfile_simplify.py (que conserva
-    a proposito los puntos de hover/home aunque no caigan en su zancada) - aqui
-    no se vuelve a downsamplear, solo se lee tal cual. Downsamplear otra vez por
-    encima podria volver a perder esos puntos de seguridad."""
+    """taskfile_simplify.py (con checkpoints_only=True) ya divide cada accion
+    real en su propio bloque, partiendo por cada parada con nombre (hover/
+    home/agarre) - asi que cada bloque de aqui tiene exactamente los dos
+    extremos de UN solo tramo. Por eso aqui basta con quedarse el primer y
+    el ultimo punto de cada bloque: no hay ninguna parada intermedia que se
+    pueda perder, porque ya no existen (estan en su propio bloque)."""
     tree = ET.parse(taskfile)
     root = tree.getroot()
     paths = []
@@ -50,6 +52,9 @@ def load_paths_from_taskfile(taskfile):
         if not points:
             continue
 
+        #if len(points) > 2:
+        #    points = [points[0], points[-1]]
+
         paths.append((block.tag, points))
 
     return paths
@@ -64,9 +69,9 @@ def send_script(filename, sock):
     time.sleep(1)
 
 
-MOVEJ_ACCEL = 0.5
-MOVEJ_VEL = 0.5
-MIN_POINT_WAIT = 1.0
+MOVEJ_ACCEL = 1.0  # subido de 0.5 ahora que el proceso completo va bien
+MOVEJ_VEL = 1.0
+MIN_POINT_WAIT = 0.5  # bajado de 1.0 ahora que el proceso completo va bien
 HOME_DWELL_SECONDS = 1.5  # pausa extra al pasar por HOME
 
 
@@ -81,18 +86,36 @@ def _point_wait(prev, point, accel=MOVEJ_ACCEL, vel=MOVEJ_VEL):
     return max(MIN_POINT_WAIT, (2 * ramp_time + cruise) * 1.3)
 
 
+FIRST_MOVE_WAIT_SECONDS = 6.0  # cuanto tarde de verdad el robot en llegar a HOME
+# desde donde estuviera antes de arrancar el script no lo sabemos (no hay
+# feedback de posicion) - _point_wait con prev=None solo da el suelo (0.5s),
+# que vale para "ya estaba ahi" (todo bloque salvo el primero arranca en el
+# punto donde acabo el anterior) pero no para este primer movimiento, de
+# distancia desconocida. Una espera fija y generosa solo para este caso.
+_first_movej_sent = False
+
+
 def send_joint_path(path, sock):
-    """Un movej suelto por punto. El controlador ejecuta cada uno de forma
-    bloqueante, así que no hace falta envolverlos en nada."""
+    """Un movej suelto por punto, esperando siempre a que termine antes de
+    mandar el siguiente. Probado con radio de mezcla (sin esperar el tiempo
+    real de cada tramo intermedio) y se perdia la sincronia entre lo que el
+    script asume y donde esta realmente el robot - acababa mandando la accion
+    de la pinza antes de llegar de verdad. Vuelta a la espera completa."""
+    global _first_movej_sent
     prev = None
     for joint_config in path:
         print(f"  -> movej {joint_config}")
         sock.send(f"movej({joint_config}, a={MOVEJ_ACCEL}, v={MOVEJ_VEL})\n".encode())
 
-        wait = _point_wait(prev, joint_config)
-        if _is_home(joint_config):
-            print(f"  -> En HOME, pausa de {HOME_DWELL_SECONDS}s")
-            wait += HOME_DWELL_SECONDS
+        if not _first_movej_sent:
+            wait = FIRST_MOVE_WAIT_SECONDS
+            print(f"  -> Primer movimiento del script, pausa de {wait}s")
+            _first_movej_sent = True
+        else:
+            wait = _point_wait(prev, joint_config)
+            if _is_home(joint_config):
+                print(f"  -> En HOME, pausa de {HOME_DWELL_SECONDS}s")
+                wait += HOME_DWELL_SECONDS
         time.sleep(wait)
         prev = joint_config
 
@@ -104,7 +127,13 @@ PREVIEW = PLANS_DIR / "robot_plan_preview.txt"
 def build_action_sequence(paths):
     """Secuencia ordenada de acciones: ('move', kind, idx, puntos) y
     ('pinza', 'abrir'/'cerrar'). Una sola fuente para la previsualización y
-    la ejecución, así no se pueden desincronizar."""
+    la ejecución, así no se pueden desincronizar.
+
+    Desde que taskfile_simplify.py parte cada transporte en un bloque por
+    tramo (uno por cada hover intermedio), un mismo "transporte" puede ser
+    VARIOS bloques Transfer consecutivos, no uno solo - así que solo se abre
+    la pinza despues del ULTIMO Transfer de la racha (cuando el bloque
+    siguiente ya no es otro Transfer), no despues de cada uno."""
     actions = []
     if ENABLE_PINZA:
         actions.append(("pinza", "abrir"))  # estado inicial
@@ -114,7 +143,7 @@ def build_action_sequence(paths):
             continue
         if kind == "Transit" and idx + 1 < len(paths) and paths[idx + 1][0] == "Transfer":
             actions.append(("pinza", "cerrar"))
-        elif kind == "Transfer":
+        elif kind == "Transfer" and (idx + 1 >= len(paths) or paths[idx + 1][0] != "Transfer"):
             actions.append(("pinza", "abrir"))
     return actions
 

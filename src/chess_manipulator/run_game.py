@@ -332,7 +332,7 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     info.taskfile.close()
     keep_joints = [sj.HOME_JOINTS] + list(square_joints.values()) + list(hover_joints.values())
     try:
-        simplify_taskfile(taskfile_path, keep_joints=keep_joints)
+        simplify_taskfile(taskfile_path, keep_joints=keep_joints, checkpoints_only=True)
     except ET.ParseError as exc:
         # A failed action mid-Transfer leaves an unclosed tag. The real error is
         # already logged above; skip simplification rather than pile an XML

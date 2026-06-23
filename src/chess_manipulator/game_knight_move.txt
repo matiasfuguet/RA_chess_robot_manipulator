@@ -1,0 +1,9 @@
+# Not legal pawn play - the piece moves in an L-shape (knight pattern) to
+# capture, then continues with another knight-shaped move. The engine doesn't
+# check chess legality, just moves square-to-square, so this is purely to
+# exercise/demo a different movement shape with the same 2 pieces.
+d2=PEON_BLANCO
+e4=PEON_NEGRO
+
+d2e4
+e4g5
