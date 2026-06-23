@@ -1,8 +1,0 @@
-# Both pawns double-step first, then black captures, then advances.
-f2=PEON_BLANCO
-e7=PEON_NEGRO
-
-f2f4
-e7e5
-e5f4
-f4f3

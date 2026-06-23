@@ -1,7 +1,0 @@
-# No capture - both pawns just advance independently. Exercises alternating
-# moves between the two pieces without ever touching the graveyard.
-f2=PEON_BLANCO
-f7=PEON_NEGRO
-
-f2f4
-f7f5

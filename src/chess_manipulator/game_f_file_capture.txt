@@ -1,6 +1,0 @@
-# White captures diagonally this time, survivor advances straight.
-f2=PEON_BLANCO
-e3=PEON_NEGRO
-
-f2e3
-e3e4

@@ -1,7 +1,0 @@
-# White double-steps, black captures diagonally, survivor advances.
-d2=PEON_BLANCO
-e5=PEON_NEGRO
-
-d2d4
-e5d4
-d4d3
