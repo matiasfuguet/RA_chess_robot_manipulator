@@ -1,0 +1,8 @@
+# Not legal pawn play - the piece moves diagonally more than one square
+# (bishop pattern) to capture. The engine doesn't check chess legality, just
+# moves square-to-square, so this is purely to demo a different movement
+# shape with the same 2 pieces.
+d3=PEON_BLANCO
+f5=PEON_NEGRO
+
+d3f5

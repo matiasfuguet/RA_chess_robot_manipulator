@@ -24,6 +24,26 @@
 		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="0.057" Y="-0.003" X="0.003" />
 	</Obstacle>
 
+	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/knightW1/knightW1.urdf" scale="1.0">
+		<KauthamName name="CABALLO_BLANCO" />
+		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="0.057" Y="0.10" X="0.003" />
+	</Obstacle>
+
+	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/pawnW2/pawnW2.urdf" scale="1.0">
+		<KauthamName name="PEON_BLANCO_2" />
+		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="0.057" Y="0.20" X="0.003" />
+	</Obstacle>
+
+	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/pawnW3/pawnW3.urdf" scale="1.0">
+		<KauthamName name="PEON_BLANCO_3" />
+		<Home TH="3.185071" WZ="0.042071" WY="-0.999036" WX="0.012559" Z="0.057" Y="0.30" X="0.003" />
+	</Obstacle>
+
+	<Obstacle obstacle="/usr/share/kautham/demos/models/obstacles/chess/bishopB1/bishopB1.urdf" scale="1.0">
+		<KauthamName name="ALFIL_NEGRO" />
+		<Home TH="3.147323" WZ="0.025736" WY="-0.999580" WX="0.013345" Z="0.060" Y="0.40" X="0.058" />
+	</Obstacle>
+
 	<Controls robot="controls/right_ur3_with_gripper.cntr" />
 
 	<Planner>

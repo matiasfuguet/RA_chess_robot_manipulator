@@ -40,7 +40,7 @@ simulada chocaría con la malla del peón. Es el modo que se usa para el robot r
 ### Formato del fichero de partida
 
 ```
-# Tablero inicial: CASILLA=PIEZA  (solo PEON_BLANCO / PEON_NEGRO)
+# Tablero inicial: CASILLA=PIEZA
 e2=PEON_BLANCO
 d5=PEON_NEGRO
 
@@ -49,8 +49,12 @@ e2e4
 d5e4
 ```
 
-Los nombres de pieza deben ser `PEON_BLANCO`/`PEON_NEGRO`: son los dos únicos
-objetos definidos en la escena de Kautham. Las casillas se limitan a
+Los nombres de pieza deben tener un `<KauthamName>` correspondiente en
+`OMPL_RRTConnect_chess_pawn_capture.xml` (actualmente: `PEON_BLANCO`,
+`PEON_NEGRO`, `CABALLO_BLANCO`, `PEON_BLANCO_2`, `PEON_BLANCO_3`,
+`ALFIL_NEGRO` - ver `DEFAULT_OBJECT_WORLD_POSES`/`PARKING_SPOTS` en
+`run_game.py`). Una pieza nueva necesita una entrada `<Obstacle>` a juego en
+esa escena, o Kautham se cae al intentar adjuntarla. Las casillas se limitan a
 `REACHABLE_RANKS` (filas 2-8). El pipeline no valida la legalidad de los
 movimientos, solo los ejecuta.
 

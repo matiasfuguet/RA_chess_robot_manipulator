@@ -199,11 +199,17 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     return actions_list, square_joints, hover_joints
 
 
-# World-frame poses (Kautham axis-angle) of the scene's two pieces. A game with
-# other pieces needs matching <Obstacle> entries added to the scene XML first.
+# World-frame poses (Kautham axis-angle) of the scene's pieces. A game with
+# other piece names needs a matching <Obstacle>/<KauthamName> entry added to
+# OMPL_RRTConnect_chess_pawn_capture.xml first (this is the file run_game.py
+# always loads, in both --no-objects and normal mode - see KAUTHAM_PROBLEM_FILE).
 DEFAULT_OBJECT_WORLD_POSES = {
     "PEON_NEGRO": [0.058, 0.053, 0.060, 0.013345, -0.999580, 0.025736, 3.147323],
     "PEON_BLANCO": [0.003, -0.003, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
+    "CABALLO_BLANCO": [0.003, 0.10, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
+    "PEON_BLANCO_2": [0.003, 0.20, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
+    "PEON_BLANCO_3": [0.003, 0.30, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
+    "ALFIL_NEGRO": [0.058, 0.40, 0.060, 0.013345, -0.999580, 0.025736, 3.147323],
 }
 KAUTHAM_PROBLEM_FILE = "OMPL_RRTConnect_chess_pawn_capture.xml"
 ROBOT_HOME_CONTROLS = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, 0.813]
@@ -214,6 +220,10 @@ ROBOT_HOME_CONTROLS = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, 0.813]
 PARKING_SPOTS = {
     "PEON_NEGRO": [-0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
     "PEON_BLANCO": [0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
+    "CABALLO_BLANCO": [-0.8, 0.3, -1.0, 1.0, 0.0, 0.0, 0.0],
+    "PEON_BLANCO_2": [0.8, 0.3, -1.0, 1.0, 0.0, 0.0, 0.0],
+    "PEON_BLANCO_3": [0.8, 0.6, -1.0, 1.0, 0.0, 0.0, 0.0],
+    "ALFIL_NEGRO": [-0.8, 0.6, -1.0, 1.0, 0.0, 0.0, 0.0],
 }
 
 # Sideways (X) offset applied just before attaching: the real-robot grasp pose
@@ -362,8 +372,9 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 def load_game_file(path):
     """Parse a game file: 'SQUARE=PIECE_NAME' lines set the initial board, other
     non-comment lines are UCI moves in order, '#' starts a comment. Piece names
-    must be PEON_NEGRO/PEON_BLANCO (the scene's only two objects). Returns
-    (board, moves)."""
+    must match a <KauthamName> declared in OMPL_RRTConnect_chess_pawn_capture.xml
+    (see DEFAULT_OBJECT_WORLD_POSES/PARKING_SPOTS for the ones currently wired
+    up). Returns (board, moves)."""
     board, moves = {}, []
     with open(path) as f:
         for line in f:
