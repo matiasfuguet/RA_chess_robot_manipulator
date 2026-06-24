@@ -1,7 +1,8 @@
-"""Generate a Kautham taskfile from a small list of UCI chess moves.
+"""Genera el taskfile de Kautham a partir de una partida.
 
-Each chess move is solved as its own PDDL problem, then all symbolic actions are
-replayed through Kautham/ktmpb to obtain the joint-space taskfile.
+Cada jugada se resuelve como un problema PDDL independiente (el dominio no
+sabe nada de ajedrez) y luego se juntan todos los planes para mandarlos a
+Kautham/ktmpb y sacar el taskfile final.
 """
 
 import os
@@ -9,8 +10,6 @@ import sys
 import xml.etree.ElementTree as ET
 
 FILE_DIR = os.path.dirname(os.path.abspath(__file__))
-# ktmpb_client bare-imports its own modules (MOVE/PICK/PLACE/ktmpb_python_interface)
-# by appending its directory to sys.path, so we import them the same way.
 KTMPB_CLIENT_DIR = os.path.expanduser(
     "~/ws_tamp/src/task_and_motion_planning2/ktmpb/ktmpb_client/ktmpb_client"
 )
@@ -39,7 +38,7 @@ def next_free_graveyard_slot(used_slots):
 
 
 def _episode_pddl(piece, src_loc, dst_loc, extra_init_clear):
-    """One pick-at-src / place-at-dst episode's :init/:goal fragments."""
+    # init/goal de un pick en src + place en dst
     init = [f"(in {piece} {src_loc.name})"] + src_loc.pddl_facts() + dst_loc.pddl_facts()
     if extra_init_clear:
         init.append(f"(clear {dst_loc.name})")
@@ -47,7 +46,7 @@ def _episode_pddl(piece, src_loc, dst_loc, extra_init_clear):
 
 
 def build_move_episode(board, move_uci, used_graveyard_slots):
-    """Build the PDDL problem for one move and update the board state."""
+    # construye el problema PDDL de una jugada y deja el tablero actualizado
     src, dst = parse_uci_move(move_uci)
     if src not in board:
         raise ValueError(f"no piece on {src} to move")
@@ -63,6 +62,8 @@ def build_move_episode(board, move_uci, used_graveyard_slots):
     new_board = dict(board)
     new_used = set(used_graveyard_slots)
 
+    # si hay captura, primero hay que sacar la pieza capturada y mandarla
+    # al graveyard antes de mover la pieza que captura a esa casilla
     if captured_piece is not None:
         grave_loc = sj.Location.for_graveyard(next_free_graveyard_slot(used_graveyard_slots))
         locations.append(grave_loc)
@@ -75,7 +76,7 @@ def build_move_episode(board, move_uci, used_graveyard_slots):
         new_board.pop(dst)
         new_used.add(int(grave_loc.name.replace("graveyard", "")))
     else:
-        init_facts.append(f"(clear {dst_loc.name})")  # dst empty, needed for place
+        init_facts.append(f"(clear {dst_loc.name})")  # si no hay captura, dst tiene que estar clear para el place
 
     init, goal = _episode_pddl(moving_piece, src_loc, dst_loc, extra_init_clear=False)
     init_facts += init
@@ -110,7 +111,8 @@ with open(os.path.join(FILE_DIR, "ff-domains", "domain_chess.pddl")) as _f:
 
 
 def build_combined_plan(board, moves):
-    """Solve every move in order and concatenate the resulting plan lines."""
+    # resuelve cada jugada por separado (con Fast Downward) y va concatenando
+    # los planes en orden, actualizando el tablero despues de cada una
     import rclpy
     import ktmpb_python_interface as ktmpb
 
@@ -142,12 +144,14 @@ def build_combined_plan(board, moves):
 
 
 def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
-    """Build the Move/Pick/Place entries needed by ktmpb_client."""
+    # construye las acciones Move/Pick/Place en el formato que espera ktmpb_client
     import MOVE
     import PICK
     import PLACE
 
-    # Chain IK seeds so nearby board poses converge on the same branch.
+    # vamos encadenando la seed de la IK (la solucion de una casilla sirve de
+    # seed para la siguiente) para que no se pierda la convergencia al pasar
+    # de una zona del tablero a otra
     seed = seed if seed is not None else sj.D5_SEED_JOINTS
     actions_list = []
     square_joints = {}
@@ -162,7 +166,9 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
             elem = ET.fromstring(snippet)
             actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
 
-    # Allow direct hover-to-hover transfers while carrying a piece.
+    # ademas hace falta un move directo hover->hover para cada par de casillas:
+    # el dominio permite ir de un hover a otro sin pasar por home (cuando se
+    # lleva una pieza del pick al place) y no sabemos  que par usara
     names = list(locations.keys())
     for i, name_a in enumerate(names):
         for name_b in names[i + 1:]:
@@ -181,7 +187,9 @@ def build_actions_list(locations, pieces, piece_to_kautham, seed=None):
     return actions_list, square_joints, hover_joints
 
 
-# World-frame poses of the pieces declared in the Kautham scene.
+# posiciones (en el frame del mundo de kautham) de las piezas que hay
+# declaradas como <Obstacle> en la escena. Si se añade una pieza nueva al
+# juego, primero hay que declararla en el XML o kautham se cae al hacer el attach
 DEFAULT_OBJECT_WORLD_POSES = {
     "PEON_NEGRO": [0.058, 0.053, 0.060, 0.013345, -0.999580, 0.025736, 3.147323],
     "PEON_BLANCO": [0.003, -0.003, 0.057, 0.012559, -0.999036, 0.042071, 3.185071],
@@ -193,7 +201,8 @@ DEFAULT_OBJECT_WORLD_POSES = {
 KAUTHAM_PROBLEM_FILE = "OMPL_RRTConnect_chess_pawn_capture.xml"
 ROBOT_HOME_CONTROLS = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, 0.813]
 
-# Parking poses used by --no-objects mode.
+# donde aparcamos cada pieza cuando usamos --no-objects. Cada una necesita su
+# propio hueco porque si dos quedan en el mismo sitio se arrastran entre ellas
 PARKING_SPOTS = {
     "PEON_NEGRO": [-0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
     "PEON_BLANCO": [0.8, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
@@ -203,15 +212,20 @@ PARKING_SPOTS = {
     "ALFIL_NEGRO": [-0.8, 0.6, -1.0, 1.0, 0.0, 0.0, 0.0],
 }
 
-# Small offset used before attach to avoid simulated gripper collisions.
+# offset que se aplica justo antes del attach: la pose de agarre real choca
+# con la pinza simulada si la pieza esta justo debajo, moviendola un poco al
+# lado (en X) ya no choca
 ATTACH_CLEARANCE_X = 0.08
 
-# Give RRTConnect more time than the scene default.
+# el tiempo de planificacion por defecto de la escena (10s) se queda corto
+# a veces y falla el RRTConnect sin motivo aparente, con 60s va mejor
 MAX_PLANNING_TIME_SECONDS = "60"
 
 
 def _drop_redundant_home_moves(plan_lines):
-    """Drop square->hover moves already done inside PICK/PLACE."""
+    # el PICK/PLACE ya hace el tramo casilla->hover el solo al retirarse,
+    # asi que si el plan trae ese mismo move justo despues, lo quitamos
+    # (si no, kautham lo intenta resolver dos veces)
     result = []
     for line in plan_lines:
         parts = line.split()
@@ -226,12 +240,12 @@ def _drop_redundant_home_moves(plan_lines):
 def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
                     scenario_folder_path, piece_to_kautham,
                     object_world_poses=None, show_rviz=False, include_objects=True):
-    """Replay the combined plan through Kautham and write the taskfile."""
+    # recorre el plan ya resuelto, lo manda a kautham y va escribiendo el taskfile
     import rclpy
     from rclpy.node import Node
     import kautham_ros.kautham_ros_interface_python as kautham
     import ktmpb_python_interface as ktmpb
-    import MOVE  # noqa: F401  (needed in globals() for ktmpb's dispatch-by-tag)
+    import MOVE  # noqa: F401  (hace falta importado para que ktmpb lo encuentre por nombre)
     import PICK  # noqa: F401
     import PLACE  # noqa: F401
 
@@ -239,6 +253,11 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     if include_objects:
         object_world_poses = real_object_poses
     else:
+        # con --no-objects las piezas estan aparcadas todo el rato. Antes de
+        # adjuntar una hay que teletransportarla a su sitio real (un poco
+        # desplazada en X para que no choque con la pinza ya cerrada) y al
+        # soltarla volver a aparcarla. Para PICK/PLACE no cambia nada, siguen
+        # llamando a las mismas funciones de siempre
         last_known_pose = dict(real_object_poses)
         object_world_poses = {name: PARKING_SPOTS[name] for name in real_object_poses}
         real_attach, real_detach = kautham.kAttachObject, kautham.kDetachObject
@@ -299,15 +318,16 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
     info.taskfile.write("</Task>\n")
     info.taskfile.close()
     keep_joints = [sj.HOME_JOINTS] + list(square_joints.values()) + list(hover_joints.values())
-    #try:
-        #simplify_taskfile(taskfile_path, keep_joints=keep_joints, checkpoints_only=True)
-    #except ET.ParseError as exc:
-        # A failed action mid-Transfer leaves an unclosed tag. The real error is
-        # already logged above; skip simplification rather than pile an XML
-        # traceback on top.
-    #    node.get_logger().error(f"Taskfile malformed (an action above probably failed mid-Transfer) - skipping simplification: {exc}")
+    try:
+        simplify_taskfile(taskfile_path, keep_joints=keep_joints, checkpoints_only=True)
+    except ET.ParseError as exc:
+        # si una accion falla a media transferencia el taskfile queda con una
+        # etiqueta sin cerrar; el error real ya se ha logueado arriba, asi que
+        # aqui solo avisamos y no intentamos simplificar nada mas
+        node.get_logger().error(f"Taskfile malformed (an action above probably failed mid-Transfer) - skipping simplification: {exc}")
 
-    # Save the original symbolic plan for manual review before moving the robot.
+    # guardamos el plan simbolico tal cual, sin filtrar nada, para poder
+    # revisarlo a mano antes de mover el robot real
     plans_dir = os.path.normpath(os.path.join(FILE_DIR, "..", "..", "plans"))
     os.makedirs(plans_dir, exist_ok=True)
     plan_path = os.path.join(plans_dir, os.path.splitext(taskfile_name)[0] + ".plan.txt")
@@ -323,7 +343,7 @@ def run_on_kautham(combined_plan, locations, pieces, models_folder_path,
 
 
 def load_game_file(path):
-    """Parse initial pieces and UCI moves from a text file."""
+    # lee el fichero de la partida: tablero inicial (CASILLA=PIEZA) + jugadas UCI
     board, moves = {}, []
     with open(path) as f:
         for line in f:
@@ -339,7 +359,7 @@ def load_game_file(path):
 
 
 if __name__ == "__main__":
-    # Needs the downward_server and kautham_ros node running (see README).
+    # hace falta tener corriendo el downward_server y el nodo de kautham_ros (ver README)
     #   python3 run_game.py path/to/game.txt [--no-objects]
     include_objects = "--no-objects" not in sys.argv
     game_file_args = [a for a in sys.argv[1:] if a != "--no-objects"]
@@ -359,8 +379,6 @@ if __name__ == "__main__":
         print(f"  {action_type} {piece} @ {loc.name}")
     print("\n=== final board state ===", final_board)
 
-    # models_folder_path="" on purpose: the scene XML's model paths are absolute,
-    # and kOpenProblem prepends this folder, so a non-empty one would double it.
     print("\n=== generating taskfile via Kautham (needs kautham_ros node running) ===")
     run_on_kautham(combined_plan, locations, pieces,
                     models_folder_path="",

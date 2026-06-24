@@ -12,26 +12,3 @@ posicion peon blanco en e4: X:10.77mm Y:-382.27mm Z:-360.40mm RX:0.040RAD RY:-3.
 posicion graveyard (una casilla a la izquierda de a5): X:-299.99mm Y:-321.43mm Z:-357.58mm RX:0.043RAD RY:-3.146RAD RZ:0.081RAD
 
 
-Esto nos puso el profe en otro proyecto con este robot: 
-
-Hola a todos,
-
-Después de que algunos de vosotros me comentarais que os aparecían valores extraños al hacer la normalización que os escribí en la pizarra, me quedé haciendo un par de pruebas con el robot real y me he dado cuenta de que la fórmula que os puse estaba mal. ¡Perdonad!
-
-Para las articulaciones 1, 2, 4, 5 y 6 (todas menos el codo):
-
-    q_i en radianes está en [-2pi,2pi]
-
-    q_i_normalizado=(q_i+2pi)/4pi en [0,1]
-
-Para la articulación 3 (el codo):
-
-    q_i en radianes está en [-pi,pi] (en realidad no exactamente, pero podéis expresarlo en este intervalo usando trigonometría básica)
-
-    q_i_normalizado=(q_i+pi)/2pi en [0,1]
-
-Con esto ya debería funcionar correctamente a partir de los valores que obtengáis del robot real.
-
-Saludos y buen finde.
-
-Isiah   

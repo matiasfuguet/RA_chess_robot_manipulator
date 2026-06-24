@@ -1,12 +1,9 @@
-"""Post-process Kautham taskfiles without losing the important stops.
+"""Limpia el taskfile que genera kautham/ktmpb sin perder los puntos importantes.
 
-Kautham/ktmpb can write repeated movements when PICK/PLACE already include an
-approach or retreat. This module removes those repeats and can reduce dense
-RRTConnect paths.
+ktmpb a veces escribe movimientos repetidos (PICK/PLACE ya hacen su propia
+aproximacion/retirada por dentro) y esto los quita.
 
-Important: in ``checkpoints_only`` mode the split is done at known poses
-(home, hover and grasp). That is what prevents the robot runner from skipping a
-hover when two Transit/Transfer blocks are merged or appear consecutively."""
+"""
 
 import xml.etree.ElementTree as ET
 
@@ -24,6 +21,9 @@ def _endpoints(confs):
 
 
 def _drop_redundant_blocks(root):
+    # si no se lleva ninguna pieza, cada accion mete su propio Transit. Cuando
+    # PICK/PLACE resuelve "ir al objeto" otra vez (ya resuelto por el MOVE de
+    # antes) sale un segundo bloque con el mismo origen/destino: lo borramos
     prev_endpoints = None
     for block in [b for b in root if b.tag in ("Transit", "Transfer")]:
         confs = block.findall("Conf")
@@ -37,6 +37,10 @@ def _drop_redundant_blocks(root):
 
 
 def _drop_redundant_revisits(confs):
+    # mientras se lleva una pieza, ktmpb junta varias acciones en un solo
+    # Transfer continuo, y dentro de ese bloque aparece la misma redundancia
+    # pero como repeticion seguida o como un "bote" de vuelta a un punto ya
+    # visitado (subir, bajar otra vez al mismo sitio). Quitamos ambos casos
     items = [(c, [float(x) for x in c.text.split()][UR3_JOINT_SLICE]) for c in confs]
     if not items:
         return []
@@ -57,7 +61,9 @@ def _drop_redundant_revisits(confs):
 
 
 def _split_into_hops(block, confs, is_kept_waypoint):
-    """Split a block into hops between named checkpoints."""
+    # separamos el bloque en un sub-bloque por cada tramo real: cortamos en
+    # cada punto con nombre (los de keep_joints) para que cada trozo tenga
+    # solo los dos extremos de un movimiento de verdad
     kept_ids = {id(confs[0]), id(confs[-1])}
     kept_ids.update(id(c) for c in confs if is_kept_waypoint(c))
     checkpoints = [c for c in confs if id(c) in kept_ids]
@@ -96,7 +102,7 @@ def simplify_taskfile(taskfile_path, step=20, keep_joints=None, checkpoints_only
             for offset, segment in enumerate(segments):
                 root.insert(idx + offset, segment)
             continue
-
+        
         if len(confs) <= step:
             kept_confs = confs
         else:

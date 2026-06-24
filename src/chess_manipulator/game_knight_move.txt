@@ -1,6 +1,4 @@
-# Not legal pawn play - the knight-shaped piece repositions, the pawn
-# advances normally, then the knight captures it with a second knight-shaped
-# move. The engine doesn't check chess legality, just moves square-to-square.
+
 d2=PEON_BLANCO
 e2=PEON_NEGRO
 

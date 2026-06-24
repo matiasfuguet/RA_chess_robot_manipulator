@@ -1,0 +1,8 @@
+
+e2=PEON_BLANCO
+d5=PEON_NEGRO
+
+
+e2e4
+d5e4
+e4e3

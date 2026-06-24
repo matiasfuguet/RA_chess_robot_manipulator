@@ -1,14 +1,15 @@
-"""Convert board squares or graveyard slots into UR3e joints and XML snippets.
+"""Pasa de una casilla del tablero (o slot del graveyard) a joints del UR3e
+y al XML que pide ktmpb.
 
-The geometry is calibrated from taught points in ``docs/posiciones_reales.md``.
-Only the ranks/slots that converged reliably during tests are enabled.
+La geometria esta calibrada con los puntos  que hay en
+docs/posiciones_reales.md. Solo dejamos activas las filas/slots que de verdad
+convergen bien en las pruebas, las demas dan problemas de IK.
 """
 
 import numpy as np
 
-# --- kinematics ---
+# --- cinematica ---
 
-# (xyz, rpy) per segment, base -> shoulder_pan -> ... -> wrist_3.
 SEGMENTS = [
     ((0, 0, 0.15185), (0, 0, 0)),
     ((0, 0, 0), (1.570796327, 0, 0)),
@@ -17,8 +18,8 @@ SEGMENTS = [
     ((0, -0.08535, -1.750557762378351e-11), (1.570796327, 0, 0)),
     ((0, 0.0921, -1.8890025766262e-11), (1.570796326589793, 3.141592653589793, 3.141592653589793)),
 ]
-TCP_OFFSET = np.array([0.0, 0.0, 0.2286])  # gripper fingertip, along tool Z
-BASE_OFFSET = np.array([-0.015467, 0.013733, -0.347767])  # fitted from taught points
+TCP_OFFSET = np.array([0.0, 0.0, 0.2286])  # punta de la pinza, a lo largo del eje Z de la herramienta
+BASE_OFFSET = np.array([-0.015467, 0.013733, -0.347767])  # ajustado a partir de los puntos enseñados
 
 
 def _rot_x(a):
@@ -62,7 +63,7 @@ def _rotvec_to_rotmat(rv):
 
 
 def forward_kinematics(joints):
-    """6 joint angles (rad) -> (x, y, z, rx, ry, rz) TCP pose in robot frame."""
+    """6 angulos (rad) -> pose (x, y, z, rx, ry, rz) de la pinza, en el frame del robot."""
     t = np.eye(4)
     for (xyz, rpy), q in zip(SEGMENTS, joints):
         t = t @ _segment_transform(xyz, rpy, q)
@@ -82,6 +83,7 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
         if np.linalg.norm(err) < tol:
             return q, True
 
+        # jacobiano numerico, columna a columna
         jacobian = np.zeros((6, 6))
         for i in range(6):
             dq = q.copy()
@@ -98,36 +100,38 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
 
 
 def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8):
-    """Damped least-squares IK, seeded from a nearby known config."""
+    """IK por minimos cuadrados amortiguados, con seed cerca para caer en la misma rama que el robot real."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
     if not ok:
         raise RuntimeError(f"IK did not converge towards {target_pose}")
     return q
 
 
-# --- board geometry ---
+# --- geometria del tablero ---
 
 FILES = "abcdefgh"
 
-# d5's taught config (rad), used to seed IK everywhere else.
+# configuracion enseñada en d5 (rad), la usamos para arrancar la IK en todos lados
 D5_SEED_JOINTS = [d * np.pi / 180.0 for d in [59.03, -87.19, 111.60, -116.73, -88.17, 327.52]]
 
-# Taught (x, y, z) in metres, from posiciones_reales.md.
+# (x, y, z) en metros, sacados de posiciones_reales.md
 _D5_POS, _E4_POS, _GRAVEYARD_RANK5_POS = (
     (-0.05185, -0.32145, -0.35752), (0.01077, -0.38227, -0.36040), (-0.29999, -0.32143, -0.35758),
 )
 _D5_FILE, _D5_RANK, _E4_FILE, _E4_RANK, _GRAVEYARD_FILE = 4, 5, 5, 4, 0
 
-# Orientation measured from the most consistent taught points.
+# orientacion fija para todas las casillas (el mismo angulo de aproximacion
+# para cualquier sitio del tablero), sacada de los puntos mas consistentes
 ORIENTATION = (0.0425, -3.146, 0.081)
-HOVER_HEIGHT = 0.0585  # measured from real hover-vs-grasp joint pairs
+HOVER_HEIGHT = 0.0585  # medido comparando joints de hover y de agarre reales
 
 REACHABLE_RANKS = range(2, 9)
 GRAVEYARD_REACHABLE_SLOTS = range(4, 9)
 
-# Displacement per +1 file step (d5 -> graveyard, same rank).
+# con estos 3 puntos enseñados (d5, e4 y graveyard rank5) interpolamos el
+# resto del tablero: cuanto se desplaza la posicion por cada paso de fila/columna
 FILE_AXIS = tuple((d - g) / (_D5_FILE - _GRAVEYARD_FILE) for d, g in zip(_D5_POS, _GRAVEYARD_RANK5_POS))
-# Per +1 rank step: e4-d5 is one diagonal (+1 file, -1 rank); strip the file part.
+# e4-d5 es un paso en diagonal (+1 columna, -1 fila); quitamos la parte de columna
 RANK_AXIS = tuple(
     (e - d - f * (_E4_FILE - _D5_FILE)) / (_E4_RANK - _D5_RANK)
     for e, d, f in zip(_E4_POS, _D5_POS, FILE_AXIS)
@@ -140,23 +144,23 @@ def _pos_for(file_idx, rank_idx):
 
 
 def square_pose(square):
-    """Cartesian pose for a board square like "e4": (x, y, z, rx, ry, rz)."""
+    """Pose cartesiana de una casilla tipo "e4": (x, y, z, rx, ry, rz)."""
     return _pos_for(FILES.index(square[0].lower()) + 1, int(square[1:])) + ORIENTATION
 
 
 def graveyard_pose(slot):
-    """Cartesian pose for graveyard slot 1-8 (one column left of file a)."""
+    """Pose cartesiana del slot 1-8 del graveyard (una columna a la izquierda de la fila a)."""
     return _pos_for(_GRAVEYARD_FILE, slot) + ORIENTATION
 
 
 def hover_pose(pose):
-    """Same pose, lifted HOVER_HEIGHT in Z."""
+    """La misma pose pero levantada HOVER_HEIGHT en Z."""
     x, y, z, rx, ry, rz = pose
     return (x, y, z + HOVER_HEIGHT, rx, ry, rz)
 
 
 def joints_for(pose, seed=None):
-    """Joint config for a Cartesian pose."""
+    """Joints para llegar a una pose cartesiana, con seed opcional (si no, parte de d5)."""
     return inverse_kinematics(pose, seed if seed is not None else D5_SEED_JOINTS)
 
 
@@ -167,7 +171,7 @@ def _check_reachable(square):
 
 
 class Location:
-    """One PDDL location: a square or graveyard slot, plus its hover."""
+    """Una location del PDDL: una casilla o un slot del graveyard, con su hover."""
 
     def __init__(self, name, pose):
         self.name = name
@@ -190,14 +194,14 @@ class Location:
         return [f"(is_hover {self.hover_name})", f"(above {self.hover_name} {self.name})", f"(valid_zone {self.name})"]
 
 
-# --- tampconfig XML ---
+# --- generacion del XML para ktmpb ---
 
 PI = 3.141592653589793
-GRIPPER_CONTROL = 0.813  # placeholder; open/close is done via attach/detach, not this slot
+GRIPPER_CONTROL = 0.813  
 
 
 def joints_to_controls(joints_rad):
-    """6 joint angles (rad) -> normalized control string plus gripper slot."""
+    """6 angulos (rad) -> string de controles normalizados [0,1] + el de la pinza."""
     controls = []
     for i, q in enumerate(joints_rad):
         norm = (q + PI) / (2 * PI) if i == 2 else (q + 2 * PI) / (4 * PI)
@@ -208,7 +212,7 @@ def joints_to_controls(joints_rad):
     return " ".join(f"{v:.6f}" for v in controls)
 
 
-# Directly-taught home, well above the board (see "home" in posiciones_reales.md).
+# home enseñado directamente, bien por encima del tablero (ver "home" en posiciones_reales.md)
 HOME_JOINTS_DEG = [79.77, -80.75, 55.31, -68.87, -87.87, 348.59]
 HOME_JOINTS = [d * np.pi / 180.0 for d in HOME_JOINTS_DEG]
 HOME_CONTROLS = joints_to_controls(HOME_JOINTS)
@@ -224,7 +228,7 @@ def _move_xml(region_from, region_to, init_controls, goal_controls):
 
 
 def tampconfig_move_actions(loc, seed=None):
-    """Build the HOME/hover/square movement snippets for one location."""
+    """Los 4 <Move> de una location: home<->hover y hover<->casilla, en los dos sentidos."""
     hover_j = joints_for(loc.hover_pose, seed=seed)
     square_j = joints_for(loc.pose, seed=hover_j)
     hover_c, square_c = joints_to_controls(hover_j), joints_to_controls(square_j)
@@ -239,13 +243,16 @@ def tampconfig_move_actions(loc, seed=None):
 
 
 def tampconfig_hover_transfer(loc_a, loc_b, hover_a, hover_b):
-    """Move directly between two hover points while carrying a piece."""
+    """<Move> directo entre los hover de dos locations, para cuando se lleva una pieza sin pasar por home."""
     region_a, region_b = f"{loc_a.name.upper()}_HOVER", f"{loc_b.name.upper()}_HOVER"
     return _move_xml(region_a, region_b, joints_to_controls(hover_a), joints_to_controls(hover_b))
 
 
 def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints, hover_joints):
-    """Build a Pick/Place snippet that retreats to this location's hover."""
+    # HomeControls es donde PICK/PLACE se retiran nada mas agarrar/soltar - se
+    # pone el hover de esta location (no el home de verdad) para que suba en
+    # vertical primero, en vez de cruzar el tablero a la altura de agarre y
+    # arriesgarse a tirar otra pieza
     grasp_controls = joints_to_controls(square_joints)
     hover_controls = joints_to_controls(hover_joints)
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
