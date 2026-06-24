@@ -11,7 +11,9 @@ import xml.etree.ElementTree as ET
 FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ktmpb_client bare-imports its own modules (MOVE/PICK/PLACE/ktmpb_python_interface)
 # by appending its directory to sys.path, so we import them the same way.
-KTMPB_CLIENT_DIR = "/home/gerard/Escritorio/IA/6t/RA/Practica_final1/RA_chess_robot_manipulator/ws_tamp/src/task_and_motion_planning2/ktmpb/ktmpb_client/ktmpb_client"
+KTMPB_CLIENT_DIR = os.path.expanduser(
+    "~/ws_tamp/src/task_and_motion_planning2/ktmpb/ktmpb_client/ktmpb_client"
+)
 for _path in (FILE_DIR, KTMPB_CLIENT_DIR):
     if _path not in sys.path:
         sys.path.append(_path)
