@@ -8,9 +8,8 @@ d5=PEON_NEGRO
 # black advances. Legal pawn play: white double-steps onto e4, black
 # captures diagonally (the only way a pawn capture is actually legal),
 # then the survivor advances straight ahead.
-# (Picked e4/e5/e6 as the well-exercised file - d4 specifically has a
-# known pick-and-retreat-with-attached-object reachability issue, see
-# project_chess_manipulator_state memory.)
+# Picked e4/e5/e6 because that file was tested more. Avoid d4 for now:
+# it gave reachability problems when retreating with the piece attached.
 e2e4
 d5e4
 e4e3

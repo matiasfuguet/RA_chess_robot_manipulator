@@ -1,9 +1,4 @@
-"""Run the original e4-captures-d5 demo (ff-domains/problem_chess.pddl) through
-Kautham, using kautham_square_to_joints.py's sim-calibrated kinematics. Kept
-separate from run_game.py so square_to_joints.py stays real-robot-only.
-
-Needs the downward_server and a kautham_ros node running (see README).
-"""
+"""Run the original e4xd5 demo using the Kautham-calibrated kinematics."""
 
 import os
 import sys
@@ -27,8 +22,7 @@ GRIPPER_CONTROL = 0.813
 HOME_CONTROLS_LIST = [0.500, 0.375, 0.500, 0.375, 0.500, 0.500, GRIPPER_CONTROL]
 HOVER_HEIGHT = 0.0585  # matches the real robot's hover height
 
-# Validated for Kautham, same method as the d5/e4 configs. The graveyard isn't a
-# scene Object, so there's no world pose to check it against independently.
+# Graveyard pose validated in Kautham like the d5/e4 configs.
 GRAVEYARD_GRASP_CONTROLS = [0.400, 0.390, 0.840, 0.320, 0.375, 0.375]
 
 
@@ -50,9 +44,7 @@ def _move_xml(region_from, region_to, init_c, goal_c):
 
 
 def _pick_or_place_xml(tag, piece, kautham_name, region, grasp_c, hover_c):
-    """<HomeControls> is the pose PICK.py/PLACE.py return to right after
-    grasping/placing - set to this location's hover (not true HOME) so retreat
-    always lifts straight up first. See square_to_joints.tampconfig_pick_or_place."""
+    """Build a Pick/Place snippet that retreats to this location's hover."""
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
     return (
         f'<{tag} robot="UR3A" object="{piece}" region="{region}">\n'
@@ -64,10 +56,7 @@ def _pick_or_place_xml(tag, piece, kautham_name, region, grasp_c, hover_c):
 
 
 def build_location(name, grasp_joints):
-    """Computes hover joints (grasp pose + HOVER_HEIGHT in Z) and returns the 4
-    Move snippets (HOME<->hover, hover<->square, both ways), the grasp and hover
-    controls strings, and the raw hover joints (for simplify_taskfile's
-    keep_joints)."""
+    """Build movement snippets and hover joints for one location."""
     grasp_pose = kj.forward_kinematics(grasp_joints)
     x, y, z, rx, ry, rz = grasp_pose
     hover_pose = (x, y, z + HOVER_HEIGHT, rx, ry, rz)
@@ -106,9 +95,7 @@ def build_actions_list():
             elem = ET.fromstring(snippet)
             actions_list.append({"tag": elem.tag, "attrib": dict(elem.attrib), "data": MOVE.Move_read(elem)})
 
-    # One <Move> per pair of locations' hover points, so the domain's direct
-    # "hover -> hover" transfer (skipping HOME while carrying a piece) has
-    # somewhere real to be solved against.
+    # Allow direct hover-to-hover transfers while carrying a piece.
     names = list(hover_controls.keys())
     for i, name_a in enumerate(names):
         for name_b in names[i + 1:]:
@@ -131,10 +118,7 @@ def build_actions_list():
 
 
 def _drop_redundant_hover_moves(plan_lines):
-    """Pick/Place's own internal retreat now stops at this location's hover
-    (see _pick_or_place_xml's HomeControls) - re-solving that exact "region ->
-    region_hover" transition as a separate Move action is redundant. Drop it;
-    keep the next "hover -> home" leg, a real, separate hop."""
+    """Drop square->hover moves already done inside PICK/PLACE."""
     result = []
     for line in plan_lines:
         parts = line.split()
@@ -165,9 +149,7 @@ def get_combined_plan():
 
 
 def run(models_folder_path, scenario_folder_path, show_rviz=False, include_objects=True):
-    """With include_objects=False the pawns are left out of the scene and only the
-    `move` lines run (pick/place need an object to attach to), so the transit
-    paths can be checked without grasp-pose collision checks in the way."""
+    """Run the demo and write its taskfile."""
     import rclpy
     from rclpy.node import Node
     import kautham_ros.kautham_ros_interface_python as kautham

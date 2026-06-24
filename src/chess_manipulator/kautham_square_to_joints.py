@@ -1,20 +1,12 @@
-"""Kautham-visualization-only counterpart to square_to_joints.py.
+"""Kautham-only calibration for the original e4xd5 visualization.
 
-square_to_joints.py is calibrated for the REAL robot and must stay that way.
-Kautham's scene uses a different model (UR3, not UR3e, and a robotiq_85 gripper
-instead of the real OnRobot RG2), so the same joint values land ~17cm off in
-sim. This module recalibrates for visualization without touching anything the
-real robot depends on, fitted against the validated d5/e4 grasp configs and the
-piece world poses in OMPL_RRTConnect_chess_pawn_capture.xml.
-
-Note: the robot's world placement uses the *negative* of the scene XML's TH
-(Kautham's axis-angle sign convention); the leftover ~169mm Z residual is the
-robotiq_85 TCP length, absorbed into BASE_OFFSET.
+The real robot uses ``square_to_joints.py``. This file keeps the simulation
+offsets separate because Kautham uses a UR3 model with a different gripper.
 """
 
 import numpy as np
 
-# UR3 (NOT ur3e) kinematics - /usr/share/kautham/demos/models/robots/robot_descriptions/UR/config/ur3/default_kinematics.yaml
+# UR3 kinematics used by Kautham's scene.
 SEGMENTS = [
     ((0, 0, 0.1519), (0, 0, 0)),
     ((0, 0, 0), (1.570796327, 0, 0)),
@@ -98,9 +90,7 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
 
 
 def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8):
-    """Damped least-squares IK for Kautham's UR3 model. No waypoint-stepping
-    fallback (cf. square_to_joints) - only the 2 known pieces are used here,
-    both within easy reach of the d5/e4 seed."""
+    """Damped least-squares IK for Kautham's UR3 model."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
     if not ok:
         raise RuntimeError(f"IK did not converge towards {target_pose}")
@@ -117,17 +107,13 @@ def _axis_angle_to_matrix(x, y, z, wx, wy, wz, th):
     return t
 
 
-# Robot placement in the Kautham world frame, from the scene's <Robot><Home>
-# (X=0.37, axis +Z). TH is negated - see module docstring.
+# Robot placement in the Kautham world frame.
 _WORLD_T_ROBOT = _axis_angle_to_matrix(0.37, 0, 0, 0, 0, 1, -1.570796327)
 _ROBOT_T_WORLD = np.linalg.inv(_WORLD_T_ROBOT)
 
 
 def world_pose_to_robot_frame(x, y, z, wx, wy, wz, th):
-    """Converts a Kautham world-frame object pose (Kautham's own axis-angle
-    attribute order TH,WZ,WY,WX,Z,Y,X, but passed here as x,y,z,wx,wy,wz,th
-    for clarity) into (x,y,z,rx,ry,rz) in the robot's own base frame, ready
-    for inverse_kinematics()."""
+    """Convert a Kautham world pose into the robot base frame."""
     world_t_obj = _axis_angle_to_matrix(x, y, z, wx, wy, wz, th)
     robot_t_obj = _ROBOT_T_WORLD @ world_t_obj
     return tuple(robot_t_obj[:3, 3]) + tuple(_rotmat_to_rotvec(robot_t_obj[:3, :3]))

@@ -1,12 +1,7 @@
-"""Map a board square (or graveyard slot) to a UR3e joint config and the
-matching ktmpb tampconfig XML. Kinematics, board geometry and XML generation
-live together here because they're one job.
+"""Convert board squares or graveyard slots into UR3e joints and XML snippets.
 
-The UR3e chain is taken from Kautham's own description, plus a calibrated
-BASE_OFFSET fitted from 3 taught points (d5, e4, graveyard rank 5 - see
-posiciones_reales.md). Rank 1, the rank-2 corners and graveyard slots 2-3 don't
-converge from the d5/e4 seed, so REACHABLE_RANKS/GRAVEYARD_REACHABLE_SLOTS scope
-them out.
+The geometry is calibrated from taught points in ``docs/posiciones_reales.md``.
+Only the ranks/slots that converged reliably during tests are enabled.
 """
 
 import numpy as np
@@ -103,8 +98,7 @@ def _ik_attempt(target_pose, seed_joints, max_iters, tol):
 
 
 def inverse_kinematics(target_pose, seed_joints, max_iters=200, tol=1e-8):
-    """Damped least-squares IK, seeded from a nearby known config so it lands on
-    the same branch the robot was taught with."""
+    """Damped least-squares IK, seeded from a nearby known config."""
     q, ok = _ik_attempt(target_pose, seed_joints, max_iters, tol)
     if not ok:
         raise RuntimeError(f"IK did not converge towards {target_pose}")
@@ -124,8 +118,7 @@ _D5_POS, _E4_POS, _GRAVEYARD_RANK5_POS = (
 )
 _D5_FILE, _D5_RANK, _E4_FILE, _E4_RANK, _GRAVEYARD_FILE = 4, 5, 5, 4, 0
 
-# d5 and the graveyard agree on orientation; e4's hand-taught value is a few
-# degrees off, so it's not used here.
+# Orientation measured from the most consistent taught points.
 ORIENTATION = (0.0425, -3.146, 0.081)
 HOVER_HEIGHT = 0.0585  # measured from real hover-vs-grasp joint pairs
 
@@ -163,8 +156,7 @@ def hover_pose(pose):
 
 
 def joints_for(pose, seed=None):
-    """Joint config for a Cartesian pose. Seed from the previous location's
-    solution when chaining a path, otherwise from d5."""
+    """Joint config for a Cartesian pose."""
     return inverse_kinematics(pose, seed if seed is not None else D5_SEED_JOINTS)
 
 
@@ -205,8 +197,7 @@ GRIPPER_CONTROL = 0.813  # placeholder; open/close is done via attach/detach, no
 
 
 def joints_to_controls(joints_rad):
-    """6 joint angles (rad) -> normalized [0,1] control string + gripper slot
-    (normalization per posiciones_reales.md; joint 3, the elbow, uses a 2pi range)."""
+    """6 joint angles (rad) -> normalized control string plus gripper slot."""
     controls = []
     for i, q in enumerate(joints_rad):
         norm = (q + PI) / (2 * PI) if i == 2 else (q + 2 * PI) / (4 * PI)
@@ -233,10 +224,7 @@ def _move_xml(region_from, region_to, init_controls, goal_controls):
 
 
 def tampconfig_move_actions(loc, seed=None):
-    """4 <Move> snippets (HOME<->hover, hover<->square, both ways). Returns
-    (snippets, square_joints, hover_joints); both feed the matching Pick/Place
-    action - square_joints for GraspControls, hover_joints for HomeControls (see
-    tampconfig_pick_or_place)."""
+    """Build the HOME/hover/square movement snippets for one location."""
     hover_j = joints_for(loc.hover_pose, seed=seed)
     square_j = joints_for(loc.pose, seed=hover_j)
     hover_c, square_c = joints_to_controls(hover_j), joints_to_controls(square_j)
@@ -251,22 +239,13 @@ def tampconfig_move_actions(loc, seed=None):
 
 
 def tampconfig_hover_transfer(loc_a, loc_b, hover_a, hover_b):
-    """<Move> snippet straight between two locations' hover points, skipping
-    HOME - used while carrying a piece from a pick to its matching place."""
+    """Move directly between two hover points while carrying a piece."""
     region_a, region_b = f"{loc_a.name.upper()}_HOVER", f"{loc_b.name.upper()}_HOVER"
     return _move_xml(region_a, region_b, joints_to_controls(hover_a), joints_to_controls(hover_b))
 
 
 def tampconfig_pick_or_place(tag, piece, kautham_name, loc, square_joints, hover_joints):
-    """piece is the logical plan-line id (e.g. 'e4_piece') matched by object=;
-    kautham_name is the scene object it currently is (e.g. 'PEON_BLANCO'), passed
-    straight to kAttachObject/kDetachObject via <Obj>.
-
-    <HomeControls> is the pose ktmpb_client's PICK.py/PLACE.py return to right
-    after grasping/placing, internally, regardless of the symbolic plan - it's
-    set to this location's hover (not the true HOME) so that retreat always
-    lifts straight up first, instead of swinging through the board at grasp
-    height (which could knock over a piece on an adjacent square)."""
+    """Build a Pick/Place snippet that retreats to this location's hover."""
     grasp_controls = joints_to_controls(square_joints)
     hover_controls = joints_to_controls(hover_joints)
     extra = "\n    <Link> robotiq_85_base_link </Link>" if tag == "Pick" else ""
